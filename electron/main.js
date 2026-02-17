@@ -84,7 +84,7 @@ class TaskManager {
 
     try {
       // 调用 Clawdbot
-      const result = await chatWithClawdbot(task.message);
+      const result = await chatWithClawdbotWithFallback(task.message);
 
       task.status = 'completed';
       task.result = result;
@@ -169,15 +169,138 @@ let deepgramClient = null;
 let deepgramLive = null;
 let currentSender = null;
 
-// ===== Clawdbot WebSocket 配置 =====
-const CLAWDBOT_PORT = process.env.CLAWDBOT_PORT || 18789;
-const CLAWDBOT_TOKEN = process.env.CLAWDBOT_TOKEN || '6d4c9e5c78347a57af8f13136c162033f49229840cbe3c69';
-const CLAWDBOT_WS_URL = `ws://localhost:${CLAWDBOT_PORT}`;
+// ===== OpenClaw Gateway / Clawdbot WebSocket ?? =====
+const OPENCLAW_GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL;
+const OPENCLAW_GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT;
+const OPENCLAW_GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN;
+const OPENCLAW_SESSION_KEY =
+  process.env.OPENCLAW_SESSION_KEY ||
+  process.env.CLAWDBOT_SESSION_KEY ||
+  'agent:main:main';
+const OPENCLAW_SESSION_KEYS = Array.from(
+  new Set(
+    String(process.env.OPENCLAW_SESSION_KEYS || '')
+      .split(/[,\n;]+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .concat(OPENCLAW_SESSION_KEY)
+  )
+);
+
+const CLAWDBOT_PORT = OPENCLAW_GATEWAY_PORT || process.env.CLAWDBOT_PORT || 18789;
+const CLAWDBOT_TOKEN =
+  OPENCLAW_GATEWAY_TOKEN ||
+  process.env.CLAWDBOT_TOKEN ||
+  '6d4c9e5c78347a57af8f13136c162033f49229840cbe3c69';
+const CLAWDBOT_WS_URL = OPENCLAW_GATEWAY_URL || `ws://localhost:${CLAWDBOT_PORT}`;
 
 let clawdbotWs = null;
 let clawdbotConnected = false;
 let clawdbotRequestId = 0;
 let clawdbotPendingRequests = new Map();
+
+
+function normalizeText(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim();
+}
+
+function isRateLimitText(rawText) {
+  const text = normalizeText(rawText).toLowerCase();
+  if (!text) return false;
+  return (
+    /(^|\D)429(\D|$)/.test(text) ||
+    /rate\s*limit|too\s*many\s*requests|quota|tpd/.test(text)
+  );
+}
+
+function isRateLimitReplyMessage(replyText) {
+  const text = normalizeText(replyText);
+  if (!text) return false;
+  return /^upstream model rate-limited \(429\):/i.test(text) || isRateLimitText(text);
+}
+
+function extractAssistantTextFromMessage(message) {
+  if (!message || typeof message !== 'object') return '';
+
+  if (Array.isArray(message.content)) {
+    for (const part of message.content) {
+      const partText = normalizeText(part?.text);
+      if (partText) return partText;
+    }
+  }
+
+  const directText = normalizeText(message.text);
+  if (directText) return directText;
+
+  const directMessage = normalizeText(message.message);
+  if (directMessage) return directMessage;
+
+  return '';
+}
+
+function extractAssistantErrorFromMessage(message) {
+  if (!message || typeof message !== 'object') return '';
+
+  const directError = normalizeText(message.errorMessage);
+  if (directError) return directError;
+
+  const nestedError = normalizeText(message.error?.message);
+  if (nestedError) return nestedError;
+
+  if (Array.isArray(message.content)) {
+    for (const part of message.content) {
+      const partError = normalizeText(part?.errorMessage) || normalizeText(part?.error?.message);
+      if (partError) return partError;
+    }
+  }
+
+  return '';
+}
+
+function extractAssistantTextAndError(historyMessages) {
+  if (!Array.isArray(historyMessages)) {
+    return { text: '', error: '' };
+  }
+
+  const assistantMessages = historyMessages.filter((msg) => msg?.role === 'assistant');
+  if (!assistantMessages.length) {
+    return { text: '', error: '' };
+  }
+
+  const ordered = assistantMessages
+    .slice()
+    .sort((a, b) => (Number(a?.timestamp) || 0) - (Number(b?.timestamp) || 0));
+
+  let text = '';
+  let error = '';
+
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    const msg = ordered[i];
+    if (!text) text = extractAssistantTextFromMessage(msg);
+    if (!error) error = extractAssistantErrorFromMessage(msg);
+    if (text && error) break;
+  }
+
+  return { text, error };
+}
+
+function formatUpstreamFailureHint(rawError) {
+  const error = normalizeText(rawError).replace(/\s+/g, ' ');
+  if (!error) {
+    return '';
+  }
+
+  const shortError = error.length > 400 ? `${error.slice(0, 400)}...` : error;
+  const isRateLimited =
+    /(^|\D)429(\D|$)/.test(shortError) ||
+    /rate\s*limit|too\s*many\s*requests|quota|tpd/i.test(shortError);
+
+  if (isRateLimited) {
+    return `Upstream model rate-limited (429): ${shortError}`;
+  }
+  return `Upstream model error: ${shortError}`;
+}
 
 // ===== 句子分割器 =====
 class SentenceSplitter {
@@ -426,11 +549,12 @@ function clawdbotRequest(method, params = {}) {
 }
 
 // 发送聊天消息到 Clawdbot（支持流式句子分发）
-async function chatWithClawdbot(message) {
+async function chatWithClawdbot(message, options = {}) {
   try {
     await connectClawdbot();
+    const sessionKey = options.sessionKey || OPENCLAW_SESSION_KEY;
 
-    console.log(`[Clawdbot] 发送消息: "${message}"`);
+    console.log(`[Clawdbot] 发送消息: "${message}" (session: ${sessionKey})`);
 
     // 生成唯一的 idempotencyKey
     const idempotencyKey = `openclaw-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -526,22 +650,26 @@ async function chatWithClawdbot(message) {
 
               // 否则从历史记录获取
               clawdbotRequest('chat.history', {
-                sessionKey: 'agent:main:main',
-                limit: 2
+                sessionKey,
+                limit: 8
               }).then(history => {
                 clearTimeout(timeout);
-                if (history?.messages) {
-                  const lastAssistant = history.messages.find(m => m.role === 'assistant');
-                  if (lastAssistant && lastAssistant.content) {
-                    const textContent = lastAssistant.content.find(c => c.type === 'text');
-                    if (textContent) {
-                      console.log('[Clawdbot] AI 回复 (历史):', textContent.text.substring(0, 200));
-                      resolve(textContent.text);
-                      return;
-                    }
-                  }
+
+                const extracted = extractAssistantTextAndError(history?.messages);
+                if (extracted.text) {
+                  console.log('[Clawdbot] AI reply (history):', extracted.text.substring(0, 200));
+                  resolve(extracted.text);
+                  return;
                 }
-                resolve('收到了，但没有找到回复内容。');
+
+                const upstreamHint = formatUpstreamFailureHint(extracted.error);
+                if (upstreamHint) {
+                  console.warn('[Clawdbot] Empty reply with upstream error:', extracted.error);
+                  resolve(upstreamHint);
+                  return;
+                }
+
+                resolve('Received final event, but no assistant text was found.');
               }).catch(err => {
                 clearTimeout(timeout);
                 reject(err);
@@ -580,7 +708,7 @@ async function chatWithClawdbot(message) {
         id: chatReqId,
         method: 'chat.send',
         params: {
-          sessionKey: 'agent:main:main',
+          sessionKey,
           idempotencyKey: idempotencyKey,
           message: message
         }
@@ -592,11 +720,54 @@ async function chatWithClawdbot(message) {
   }
 }
 
+async function chatWithClawdbotWithFallback(message) {
+  const sessionKeys = OPENCLAW_SESSION_KEYS.length > 0
+    ? OPENCLAW_SESSION_KEYS
+    : [OPENCLAW_SESSION_KEY];
+
+  let lastRateLimitError = null;
+
+  for (let i = 0; i < sessionKeys.length; i++) {
+    const sessionKey = sessionKeys[i];
+
+    try {
+      const reply = await chatWithClawdbot(message, { sessionKey });
+
+      if (isRateLimitReplyMessage(reply)) {
+        lastRateLimitError = new Error(reply);
+        if (i < sessionKeys.length - 1) {
+          console.warn(`[Clawdbot] session ${sessionKey} 触发 429，切换下一个 session 重试`);
+          continue;
+        }
+      }
+
+      return reply;
+    } catch (error) {
+      if (isRateLimitText(error?.message)) {
+        lastRateLimitError = error;
+        if (i < sessionKeys.length - 1) {
+          console.warn(`[Clawdbot] session ${sessionKey} 请求被限流，切换下一个 session`);
+          continue;
+        }
+      }
+      throw error;
+    }
+  }
+
+  if (lastRateLimitError) {
+    throw new Error(`All OpenClaw sessions are rate-limited (429): ${lastRateLimitError.message}`);
+  }
+
+  throw new Error('No available OpenClaw session key.');
+}
+
 // ===== 窗口创建 =====
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 330,
-    height: 550,
+    width: FULL_WIDTH,
+    height: FULL_HEIGHT,
+    minWidth: MIN_FULL_WIDTH,
+    minHeight: MIN_FULL_HEIGHT,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -622,23 +793,30 @@ function createWindow() {
 
 // ===== 命令处理（通过 Clawdbot） =====
 ipcMain.handle('openclaw:executeCommand', async (event, command) => {
-  console.log('[CMD] 收到命令:', command);
+  console.log('[CMD] Received command:', command);
 
   try {
-    const reply = await chatWithClawdbot(command);
-    console.log(`[CMD] Clawdbot 回复: ${reply}`);
+    const reply = await chatWithClawdbotWithFallback(command);
+    console.log('[CMD] Clawdbot reply:', reply);
     return { type: 'chat', data: null, message: reply };
   } catch (error) {
-    console.error('[CMD] Clawdbot 调用失败:', error.message);
-    // 降级处理：返回友好提示
+    console.error('[CMD] Clawdbot call failed:', error.message);
+
+    if (isRateLimitText(error?.message)) {
+      return {
+        type: 'chat',
+        data: null,
+        message: `Upstream model rate-limited (429). Tried rotating configured sessions but still failed: ${error.message}`
+      };
+    }
+
     return {
       type: 'chat',
       data: null,
-      message: 'Clawdbot 暂时无法连接，请确保 clawdbot 服务正在运行。'
+      message: 'Clawdbot is temporarily unavailable. Please check whether the service is running.'
     };
   }
 });
-
 // ===== 异步任务管理 =====
 ipcMain.handle('task:create', async (event, message) => {
   const taskId = taskManager.createTask(message);
@@ -819,20 +997,31 @@ ipcMain.handle('deepgram:sendAudio', async (event, audioData) => {
 const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY || '';
 const MINIMAX_GROUP_ID = process.env.MINIMAX_GROUP_ID || '';
 const MINIMAX_MODEL = process.env.MINIMAX_MODEL || 'speech-02-turbo';
+const MINIMAX_API_BASE_URL = (process.env.MINIMAX_API_BASE_URL || 'https://api.minimaxi.com').replace(/\/+$/, '');
+const MINIMAX_INCLUDE_GROUP_ID =
+  String(process.env.MINIMAX_INCLUDE_GROUP_ID || 'true').toLowerCase() !== 'false';
 
 // 当前选择的音色（可被前端动态修改）
 let currentVoiceId = process.env.MINIMAX_VOICE_ID || 'Lovely_Girl';
 
 // 核心 TTS 函数（提取为独立函数，供 TTSQueueManager 调用）
 async function callMiniMaxTTS(text) {
-  if (!MINIMAX_API_KEY || !MINIMAX_GROUP_ID) {
-    throw new Error('MiniMax API Key 或 Group ID 未配置');
+  if (!MINIMAX_API_KEY) {
+    throw new Error('MiniMax API Key ???');
+  }
+  if (MINIMAX_INCLUDE_GROUP_ID && !MINIMAX_GROUP_ID) {
+    throw new Error('MiniMax Group ID ???');
   }
 
   console.log(`[TTS] MiniMax 生成语音 (音色: ${currentVoiceId}): "${text.substring(0, 50)}..."`);
 
+  const minimaxEndpoint = MINIMAX_INCLUDE_GROUP_ID
+    ? `${MINIMAX_API_BASE_URL}/v1/t2a_v2?GroupId=${encodeURIComponent(MINIMAX_GROUP_ID)}`
+    : `${MINIMAX_API_BASE_URL}/v1/t2a_v2`;
+  console.log(`[TTS] MiniMax endpoint: ${minimaxEndpoint}`);
+
   const response = await fetch(
-    `https://api.minimax.io/v1/t2a_v2?GroupId=${MINIMAX_GROUP_ID}`,
+    minimaxEndpoint,
     {
       method: 'POST',
       headers: {
@@ -916,8 +1105,10 @@ ipcMain.handle('deepgram:textToSpeech', async (event, text) => {
 });
 
 // ===== 窗口控制 =====
-const FULL_WIDTH = 330;
-const FULL_HEIGHT = 550;
+const FULL_WIDTH = 1180;
+const FULL_HEIGHT = 760;
+const MIN_FULL_WIDTH = 920;
+const MIN_FULL_HEIGHT = 620;
 const MINI_SIZE = 64;
 let isMiniMode = false;
 
@@ -944,7 +1135,7 @@ ipcMain.on('window:minimize', () => {
 ipcMain.on('window:restore', () => {
   if (!mainWindow) return;
   isMiniMode = false;
-  mainWindow.setMinimumSize(200, 300);
+  mainWindow.setMinimumSize(MIN_FULL_WIDTH, MIN_FULL_HEIGHT);
   mainWindow.setSize(FULL_WIDTH, FULL_HEIGHT);
   // 恢复到之前的位置
   if (mainWindow._restoreX !== undefined) {

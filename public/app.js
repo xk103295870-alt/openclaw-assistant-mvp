@@ -11,6 +11,8 @@ let audioPlayer = null;
 let followupTimer = null;
 let bubbleHideTimer = null;
 let auraAnimator = null;
+const ENABLE_CHARACTER_BACKGROUND_EFFECTS = false;
+const ENABLE_AVATAR_HEAD_BUBBLE = false;
 let executeTimer = null;
 let accumulatedTranscript = '';
 let lastAIResponse = ''; // 缓存最近一次 AI 回复，用于打断后查看
@@ -89,6 +91,41 @@ const CHARACTER_PROFILES = {
     },
     defaultVoice: 'Arrogant_Miss'
   },
+  kelly: {
+    id: 'kelly',
+    name: 'Kelly',
+    desc: 'Stylish virtual assistant',
+    icon: 'mdi:account-star',
+    welcomeText: 'Hi, I am Kelly. Ready when you are.',
+    thinkingPrompts: [
+      '请稍等，Kelly正在思考...',
+      'Kelly正在为你查询，请稍候...',
+      '收到，Kelly正在处理你的请求...',
+      '明白了，Kelly马上给你答案...'
+    ],
+    preQueryPrompts: [
+      '好的，kelly马上帮你去查询',
+      '收到，kelly这就去查',
+      '好的，kelly这就去看看',
+      '明白了，kelly马上处理'
+    ],
+    videos: {
+      welcome: 'kelly-welcome.mp4',
+      idle: 'kelly-idle.mp4',
+      listening: 'kelly-listening.mp4',
+      thinking: 'kelly-thinking.mp4',
+      speaking: 'kelly-speaking.mp4',
+      followup: 'kelly-listening.mp4',
+      goodbye: 'kelly-idle.mp4'
+    },
+    auraColors: {
+      idle: { r: 99, g: 102, b: 241 },
+      listening: { r: 59, g: 130, b: 246 },
+      thinking: { r: 245, g: 158, b: 11 },
+      speaking: { r: 168, g: 85, b: 247 }
+    },
+    defaultVoice: 'Lovely_Girl'
+  },
   cat: {
     id: 'cat',
     name: '喵助理',
@@ -153,7 +190,10 @@ const CHARACTER_PROFILES = {
   }
 };
 
-let currentCharacter = CHARACTER_PROFILES.lobster;
+let currentCharacter = CHARACTER_PROFILES.kelly;
+const AVAILABLE_CHARACTER_IDS = ['lobster', 'amy', 'kelly'];
+const CHARACTER_SELECTION_STORAGE_KEY = 'openclaw_selected_character_v1';
+const VOICE_SELECTION_STORAGE_KEY = 'openclaw_selected_voice_v1';
 
 // 当前角色的视频状态映射（动态切换）
 let VIDEO_SOURCES = { ...currentCharacter.videos };
@@ -170,11 +210,61 @@ function getThinkingPrompts() {
   return currentCharacter.thinkingPrompts;
 }
 
+function saveSelectedCharacter(characterId) {
+  try {
+    localStorage.setItem(CHARACTER_SELECTION_STORAGE_KEY, characterId);
+  } catch (error) {
+    console.warn('[Character] save selected character failed:', error);
+  }
+}
+
+function loadSelectedCharacter() {
+  try {
+    const characterId = localStorage.getItem(CHARACTER_SELECTION_STORAGE_KEY);
+    if (!characterId) return null;
+    if (!AVAILABLE_CHARACTER_IDS.includes(characterId)) return null;
+    return CHARACTER_PROFILES[characterId] || null;
+  } catch (error) {
+    console.warn('[Character] load selected character failed:', error);
+    return null;
+  }
+}
+
+function applySavedCharacterSelection() {
+  const savedCharacter = loadSelectedCharacter();
+  if (!savedCharacter) return;
+
+  currentCharacter = savedCharacter;
+  VIDEO_SOURCES = { ...savedCharacter.videos };
+
+  if (ENABLE_CHARACTER_BACKGROUND_EFFECTS && auraAnimator && savedCharacter.auraColors) {
+    auraAnimator.updateColors(savedCharacter.auraColors);
+  }
+}
+
+function saveSelectedVoice(voiceId) {
+  try {
+    localStorage.setItem(VOICE_SELECTION_STORAGE_KEY, voiceId);
+  } catch (error) {
+    console.warn('[Voice] save selected voice failed:', error);
+  }
+}
+
+function loadSelectedVoice() {
+  try {
+    return localStorage.getItem(VOICE_SELECTION_STORAGE_KEY) || '';
+  } catch (error) {
+    console.warn('[Voice] load selected voice failed:', error);
+    return '';
+  }
+}
+
 // ===== DOM 元素 =====
 const speechBubble = document.getElementById('speech-bubble');
 const bubbleText = document.getElementById('bubble-text');
 const statusHint = document.getElementById('status-hint');
 const lobsterArea = document.getElementById('lobster-area');
+const avatarPanel = document.querySelector('.avatar-panel');
 const lobsterChar = document.getElementById('lobster-char');
 const stateIndicator = document.getElementById('state-indicator');
 const stateDot = stateIndicator.querySelector('.state-dot');
@@ -185,19 +275,49 @@ const textInput = document.getElementById('text-input');
 const sendBtn = document.getElementById('send-btn');
 const tapHint = document.getElementById('tap-hint');
 const listeningPulseRing = document.getElementById('listening-pulse-ring');
+const chatHistoryEl = document.getElementById('chat-history');
+const chatEmptyEl = document.getElementById('chat-empty');
+const clearHistoryBtn = document.getElementById('clear-history-btn');
+
+const CHAT_HISTORY_STORAGE_KEY = 'openclaw_assistant_chat_history_v1';
+const CHAT_HISTORY_LIMIT = 200;
+let chatHistory = [];
 
 // ===== 初始化光环动画 =====
 document.addEventListener('DOMContentLoaded', () => {
+  if (!ENABLE_AVATAR_HEAD_BUBBLE) {
+    if (avatarPanel) {
+      avatarPanel.classList.add('hide-speech-bubble');
+    }
+    if (speechBubble) {
+      speechBubble.style.display = 'none';
+    }
+  }
+
   const canvas = document.getElementById('aura-canvas');
-  if (canvas && window.OrbAnimator) {
+  if (!ENABLE_CHARACTER_BACKGROUND_EFFECTS) {
+    lobsterArea.classList.add('no-bg-effects');
+    if (canvas) {
+      canvas.style.display = 'none';
+    }
+    if (listeningPulseRing) {
+      listeningPulseRing.classList.add('hidden');
+    }
+  } else if (canvas && window.OrbAnimator) {
     auraAnimator = new OrbAnimator(canvas);
   }
+
+  applySavedCharacterSelection();
+  saveSelectedCharacter(currentCharacter.id);
+
   initDeepgramListeners();
+  initCustomVoices();
   initVoice();
   initTaskListeners();
   initMiniMode();
   initStreamingTTS();  // 初始化流式 TTS 监听
-  initFilePathClickHandler();  // 初始化文件路径点击处理
+  initFilePathClickHandler();
+  initChatHistory();  // 初始化文件路径点击处理
 
   // 首次启动播放欢迎视频
   if (isFirstLaunch) {
@@ -209,24 +329,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ===== 初始化任务监听器 =====
 function initTaskListeners() {
-  // 监听任务完成
   window.electronAPI.task.onCompleted((data) => {
-    console.log('[龙虾助手] 任务完成:', data.taskId);
+    console.log('[OpenClaw Assistant] Task completed:', data.taskId);
 
     const cleanResult = cleanMarkdown(data.result);
+    const completionText = `Task completed: ${cleanResult}`;
 
-    // 显示完成通知气泡
-    showBubble(`✅ 任务完成！${cleanResult}`);
+    showBubble(completionText);
+    addChatMessage('assistant', completionText, { name: currentCharacter.name });
 
-    // 播放完成语音
-    playTextToSpeech(`任务完成了！${cleanResult}`).catch(err => {
-      console.warn('[龙虾助手] 任务完成语音播放失败:', err);
+    playTextToSpeech(completionText).catch((err) => {
+      console.warn('[OpenClaw Assistant] Task completion TTS failed:', err);
     });
 
-    // 切换到 speaking 状态
     setAppState('speaking');
 
-    // 语音播放完后回到 idle
     setTimeout(() => {
       if (appState === 'speaking') {
         setAppState('idle');
@@ -234,23 +351,21 @@ function initTaskListeners() {
     }, 5000);
   });
 
-  // 监听任务失败
   window.electronAPI.task.onFailed((data) => {
-    console.error('[龙虾助手] 任务失败:', data.taskId, data.error);
+    console.error('[OpenClaw Assistant] Task failed:', data.taskId, data.error);
 
     const cleanError = cleanMarkdown(data.error);
+    const failedText = `Task failed: ${cleanError}`;
 
-    // 显示失败通知
-    showBubble(`❌ 任务失败：${cleanError}`);
+    showBubble(failedText);
+    addChatMessage('assistant', failedText, { name: currentCharacter.name });
 
-    // 播放失败语音
-    playTextToSpeech(`抱歉，任务执行失败了：${cleanError}`).catch(err => {
-      console.warn('[龙虾助手] 任务失败语音播放失败:', err);
+    playTextToSpeech(failedText).catch((err) => {
+      console.warn('[OpenClaw Assistant] Task failed TTS failed:', err);
     });
   });
 }
 
-// ===== 状态管理 =====
 function setAppState(newState) {
   appState = newState;
   clearTimeout(followupTimer);
@@ -266,10 +381,12 @@ function setAppState(newState) {
   } else {
     tapHint.classList.add('hidden');
   }
-  if (newState === 'listening' || newState === 'followup') {
-    listeningPulseRing.classList.remove('hidden');
-  } else {
-    listeningPulseRing.classList.add('hidden');
+  if (listeningPulseRing) {
+    if (ENABLE_CHARACTER_BACKGROUND_EFFECTS && (newState === 'listening' || newState === 'followup')) {
+      listeningPulseRing.classList.remove('hidden');
+    } else {
+      listeningPulseRing.classList.add('hidden');
+    }
   }
 
   // 切换视频源
@@ -443,6 +560,8 @@ async function playWelcomeAudioFallback() {
 
 // ===== 气泡显示 =====
 function showBubble(content, isUserSpeech = false) {
+  if (!ENABLE_AVATAR_HEAD_BUBBLE || !speechBubble || !bubbleText) return;
+
   clearTimeout(bubbleHideTimer);
   speechBubble.style.display = 'block';
 
@@ -463,6 +582,8 @@ function showBubble(content, isUserSpeech = false) {
 
 // 打字机效果显示 AI 回复
 function showBubbleWithTyping(content) {
+  if (!ENABLE_AVATAR_HEAD_BUBBLE || !speechBubble || !bubbleText) return;
+
   clearTimeout(bubbleHideTimer);
   speechBubble.style.display = 'block';
   speechBubble.className = 'speech-bubble ai-response';
@@ -491,6 +612,8 @@ function showBubbleWithTyping(content) {
 
 // 带查看文本按钮的气泡（用于打断后展示）
 function showBubbleWithViewBtn(fullText, isInterrupted = false) {
+  if (!ENABLE_AVATAR_HEAD_BUBBLE || !speechBubble || !bubbleText) return;
+
   clearTimeout(bubbleHideTimer);
   speechBubble.style.display = 'block';
   speechBubble.className = 'speech-bubble ai-response';
@@ -548,6 +671,8 @@ function openTextViewer(text) {
 }
 
 function hideBubble(delay) {
+  if (!ENABLE_AVATAR_HEAD_BUBBLE || !speechBubble) return;
+
   if (delay) {
     clearTimeout(bubbleHideTimer);
     bubbleHideTimer = setTimeout(() => {
@@ -559,6 +684,8 @@ function hideBubble(delay) {
 }
 
 function fadeOutBubble() {
+  if (!speechBubble) return;
+
   speechBubble.style.transition = 'opacity 0.3s ease-out';
   speechBubble.style.opacity = '0';
   setTimeout(() => {
@@ -575,6 +702,122 @@ function escapeHtml(text) {
 }
 
 // 清理 markdown 格式符号（**加粗**、*斜体*、~~删除线~~ 等）
+function initChatHistory() {
+  if (!chatHistoryEl) return;
+
+  loadChatHistory();
+  renderChatHistory();
+
+  if (clearHistoryBtn) {
+    clearHistoryBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      chatHistory = [];
+      saveChatHistory();
+      renderChatHistory();
+    });
+  }
+}
+
+function loadChatHistory() {
+  try {
+    const raw = localStorage.getItem(CHAT_HISTORY_STORAGE_KEY);
+    if (!raw) {
+      chatHistory = [];
+      return;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      chatHistory = [];
+      return;
+    }
+
+    chatHistory = parsed
+      .filter((item) => item && typeof item.text === 'string' && typeof item.role === 'string')
+      .slice(-CHAT_HISTORY_LIMIT);
+  } catch (error) {
+    console.warn('[Chat History] Load failed:', error);
+    chatHistory = [];
+  }
+}
+
+function saveChatHistory() {
+  try {
+    localStorage.setItem(CHAT_HISTORY_STORAGE_KEY, JSON.stringify(chatHistory.slice(-CHAT_HISTORY_LIMIT)));
+  } catch (error) {
+    console.warn('[Chat History] Save failed:', error);
+  }
+}
+
+function formatChatTime(ts) {
+  const date = ts ? new Date(ts) : new Date();
+  const h = String(date.getHours()).padStart(2, '0');
+  const m = String(date.getMinutes()).padStart(2, '0');
+  return `${h}:${m}`;
+}
+
+function renderChatMessageContent(message) {
+  const safeText = escapeHtml(message.text || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n/g, '<br>');
+
+  if (message.role === 'assistant') {
+    return linkifyFilePaths(safeText);
+  }
+  return safeText;
+}
+
+function renderChatHistory() {
+  if (!chatHistoryEl) return;
+
+  if (!chatHistory.length) {
+    chatHistoryEl.innerHTML = '<div class="chat-empty" id="chat-empty">No chat history yet. Start a conversation.</div>';
+    return;
+  }
+
+  chatHistoryEl.innerHTML = chatHistory.map((message) => {
+    const roleClass = message.role === 'user' ? 'user' : 'assistant';
+    const roleName = escapeHtml(message.name || (message.role === 'user' ? 'You' : currentCharacter.name));
+    const timeText = formatChatTime(message.ts);
+    const contentHtml = renderChatMessageContent(message);
+
+    return `
+      <div class="chat-message ${roleClass}">
+        <div class="chat-message-meta">
+          <span class="chat-message-role">${roleName}</span>
+          <span class="chat-message-time">${timeText}</span>
+        </div>
+        <div class="chat-message-content">${contentHtml}</div>
+      </div>
+    `;
+  }).join('');
+
+  chatHistoryEl.scrollTop = chatHistoryEl.scrollHeight;
+}
+
+function addChatMessage(role, text, options = {}) {
+  const normalizedText = (text || '').trim();
+  if (!normalizedText) return;
+
+  const roleValue = role === 'user' ? 'user' : 'assistant';
+  const displayName = options.name || (roleValue === 'user' ? 'You' : currentCharacter.name);
+
+  chatHistory.push({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role: roleValue,
+    name: displayName,
+    text: normalizedText,
+    ts: Date.now()
+  });
+
+  if (chatHistory.length > CHAT_HISTORY_LIMIT) {
+    chatHistory = chatHistory.slice(-CHAT_HISTORY_LIMIT);
+  }
+
+  saveChatHistory();
+  renderChatHistory();
+}
+
 function cleanMarkdown(text) {
   if (!text) return text;
   return text
@@ -1003,62 +1246,67 @@ async function onLobsterClick() {
 
 // ===== 处理命令 =====
 async function handleCommand(command) {
-  if (isProcessing) return;
+  const normalizedCommand = (command || '').trim();
+  if (!normalizedCommand || isProcessing) return;
 
-  // 检测是否是异步任务
-  const asyncKeywords = ['稍后', '待会', '查完告诉我', '完成后告诉我', '好了告诉我', '处理完告诉我'];
-  const isAsyncTask = asyncKeywords.some(keyword => command.includes(keyword));
+  addChatMessage('user', normalizedCommand, { name: 'You' });
 
-  // 检测是否是告别语
-  const goodbyeKeywords = ['再见', '拜拜', '退出', '关闭', 'bye', 'goodbye'];
-  const isGoodbye = goodbyeKeywords.some(keyword =>
-    command.toLowerCase().includes(keyword)
-  );
+  const asyncKeywords = [
+    'later',
+    'after this',
+    '\u7a0d\u540e',
+    '\u5f85\u4f1a',
+    '\u67e5\u5b8c\u544a\u8bc9\u6211',
+    '\u5b8c\u6210\u540e\u544a\u8bc9\u6211',
+    '\u5904\u7406\u5b8c\u544a\u8bc9\u6211'
+  ];
+  const isAsyncTask = asyncKeywords.some((keyword) => normalizedCommand.toLowerCase().includes(keyword.toLowerCase()));
+
+  const goodbyeKeywords = ['bye', 'goodbye', '\u518d\u89c1', '\u62dc\u62dc', '\u9000\u51fa', '\u5173\u95ed'];
+  const lowerCommand = normalizedCommand.toLowerCase();
+  const isGoodbye = goodbyeKeywords.some((keyword) => lowerCommand.includes(keyword.toLowerCase()));
 
   if (isAsyncTask) {
-    // 异步任务处理
-    await handleAsyncTask(command);
+    await handleAsyncTask(normalizedCommand);
   } else {
-    // 同步任务处理
-    await handleSyncTask(command, isGoodbye);
+    await handleSyncTask(normalizedCommand, isGoodbye);
   }
 }
 
-// ===== 处理异步任务 =====
 async function handleAsyncTask(command) {
   isProcessing = true;
 
   try {
-    // 创建异步任务
     const result = await window.electronAPI.task.create(command);
 
     if (result.success) {
-      console.log(`[龙虾助手] 创建异步任务: ${result.taskId}`);
+      console.log(`[OpenClaw Assistant] Async task created: ${result.taskId}`);
 
-      // 立即反馈
       const feedbackMessages = [
-        '好的，我去处理，稍后告诉你~',
-        '收到！我马上去查，完成后通知你',
-        '明白了，让我去看看，待会告诉你结果',
-        '好嘞，我去帮你搞定，完成后叫你~'
+        'Got it. I will process this and update you shortly.',
+        "Received. I'm on it and will report back when done.",
+        "Understood. I'll handle it first, then reply with results.",
+        "No problem. I'll complete this and notify you."
       ];
       const feedback = feedbackMessages[Math.floor(Math.random() * feedbackMessages.length)];
 
       showBubble(feedback);
+      addChatMessage('assistant', feedback, { name: currentCharacter.name });
       await playTextToSpeech(feedback);
 
       setAppState('idle');
     }
   } catch (error) {
-    console.error('[龙虾助手] 创建异步任务失败:', error);
-    showBubble('任务创建失败，请重试');
+    console.error('[OpenClaw Assistant] Async task creation failed:', error);
+    const failText = 'Task creation failed, please retry.';
+    showBubble(failText);
+    addChatMessage('assistant', failText, { name: currentCharacter.name });
     setAppState('idle');
   } finally {
     isProcessing = false;
   }
 }
 
-// ===== 处理同步任务 =====
 async function handleSyncTask(command, isGoodbye) {
   isProcessing = true;
 
@@ -1091,6 +1339,7 @@ async function handleSyncTask(command, isGoodbye) {
 
     // 缓存 AI 回复（用于打断后查看）
     lastAIResponse = cleanedMessage;
+    addChatMessage('assistant', cleanedMessage, { name: currentCharacter.name });
 
     // 流式 TTS 已经在后台播放（由 initStreamingTTS 监听事件驱动）
     // 如果没有收到音频块（例如 Clawdbot 返回空），使用传统 TTS 作为备选
@@ -1128,13 +1377,17 @@ async function handleSyncTask(command, isGoodbye) {
     // 否则流式 TTS 会在 processAudioQueue 中自动进入 followup 模式
 
   } catch (error) {
-    console.error('[龙虾助手] 处理失败:', error);
-    showBubble('出错了，再点我试试吧');
+    console.error('[OpenClaw Assistant] Command handling failed:', error);
+    const errorText = 'Something went wrong. Please try again.';
+    showBubble(errorText);
+    addChatMessage('assistant', errorText, { name: currentCharacter.name });
     setAppState('idle');
     isProcessing = false;
     isSpeaking = false;
   }
 }
+
+
 
 // ===== TTS 播放 =====
 async function playTextToSpeech(text) {
@@ -1192,6 +1445,16 @@ const voicePanel = document.getElementById('voice-panel');
 const voiceList = document.getElementById('voice-list');
 const voiceSelectBtn = document.getElementById('voice-select-btn');
 const closeVoicePanel = document.getElementById('close-voice-panel');
+const addCustomVoiceBtn = document.getElementById('add-custom-voice-btn');
+const customVoiceForm = document.getElementById('custom-voice-form');
+const customVoiceIdInput = document.getElementById('custom-voice-id');
+const customVoiceNameInput = document.getElementById('custom-voice-name');
+const customVoiceDescInput = document.getElementById('custom-voice-desc');
+const customVoiceLangSelect = document.getElementById('custom-voice-lang');
+const customVoiceError = document.getElementById('custom-voice-form-error');
+const customVoiceSaveBtn = document.getElementById('custom-voice-save-btn');
+const customVoiceCancelBtn = document.getElementById('custom-voice-cancel-btn');
+const CUSTOM_VOICE_STORAGE_KEY = 'openclaw_custom_voices_v1';
 
 // MiniMax 系统音色列表（中文 + 英文）
 const VOICE_OPTIONS = [
@@ -1266,22 +1529,238 @@ const VOICE_OPTIONS = [
 let currentSelectedVoice = 'Lovely_Girl';
 let currentFilter = 'all'; // all | zh | en
 let previewingVoice = null;
+let customVoices = [];
+
+function normalizeCustomVoice(rawVoice) {
+  if (!rawVoice || typeof rawVoice !== 'object') return null;
+
+  const id = String(rawVoice.id || '').trim();
+  if (!id) return null;
+
+  const langRaw = String(rawVoice.lang || 'all').toLowerCase();
+  const lang = ['all', 'zh', 'en'].includes(langRaw) ? langRaw : 'all';
+
+  return {
+    id,
+    icon: rawVoice.icon || 'mdi:account-voice',
+    name: String(rawVoice.name || id).trim() || id,
+    desc: String(rawVoice.desc || 'Custom voice').trim() || 'Custom voice',
+    gender: rawVoice.gender === 'male' ? 'male' : 'female',
+    lang,
+    custom: true
+  };
+}
+
+function loadCustomVoices() {
+  try {
+    const raw = localStorage.getItem(CUSTOM_VOICE_STORAGE_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    const seen = new Set();
+    const list = [];
+
+    for (const item of parsed) {
+      const normalized = normalizeCustomVoice(item);
+      if (!normalized) continue;
+      if (seen.has(normalized.id)) continue;
+      seen.add(normalized.id);
+      list.push(normalized);
+    }
+
+    return list;
+  } catch (error) {
+    console.warn('[Voice] load custom voices failed:', error);
+    return [];
+  }
+}
+
+function saveCustomVoices() {
+  try {
+    localStorage.setItem(CUSTOM_VOICE_STORAGE_KEY, JSON.stringify(customVoices));
+  } catch (error) {
+    console.warn('[Voice] save custom voices failed:', error);
+  }
+}
+
+function getAllVoiceGroups() {
+  const baseGroups = VOICE_OPTIONS.map((group) => ({
+    group: group.group,
+    lang: group.lang,
+    voices: [...group.voices]
+  }));
+
+  if (customVoices.length > 0) {
+    baseGroups.unshift({
+      group: 'Custom',
+      lang: 'all',
+      voices: [...customVoices]
+    });
+  }
+
+  return baseGroups;
+}
+
+function shouldShowVoiceInFilter(voice, groupLang) {
+  if (currentFilter === 'all') return true;
+
+  if (groupLang !== 'all') {
+    return groupLang === currentFilter;
+  }
+
+  const voiceLang = String(voice.lang || 'all').toLowerCase();
+  return voiceLang === 'all' || voiceLang === currentFilter;
+}
+
+function findVoiceById(voiceId) {
+  const allGroups = getAllVoiceGroups();
+  for (const group of allGroups) {
+    const voice = group.voices.find((item) => item.id === voiceId);
+    if (voice) {
+      return voice;
+    }
+  }
+  return null;
+}
+
+function setCustomVoiceFormError(message = '') {
+  if (!customVoiceError) return;
+  customVoiceError.textContent = message;
+}
+
+function resetCustomVoiceForm() {
+  if (customVoiceIdInput) customVoiceIdInput.value = '';
+  if (customVoiceNameInput) customVoiceNameInput.value = '';
+  if (customVoiceDescInput) customVoiceDescInput.value = '';
+  if (customVoiceLangSelect) customVoiceLangSelect.value = 'all';
+  setCustomVoiceFormError('');
+}
+
+function toggleCustomVoiceForm(show) {
+  if (!customVoiceForm) return;
+
+  if (show) {
+    customVoiceForm.classList.remove('hidden');
+    setCustomVoiceFormError('');
+    if (customVoiceIdInput) {
+      customVoiceIdInput.focus();
+      customVoiceIdInput.select();
+    }
+  } else {
+    customVoiceForm.classList.add('hidden');
+    resetCustomVoiceForm();
+  }
+}
+
+async function submitCustomVoiceForm() {
+  const voiceId = (customVoiceIdInput?.value || '').trim();
+  const name = (customVoiceNameInput?.value || '').trim();
+  const desc = (customVoiceDescInput?.value || '').trim();
+  const langInput = (customVoiceLangSelect?.value || 'all').trim().toLowerCase();
+  const lang = ['all', 'zh', 'en'].includes(langInput) ? langInput : 'all';
+
+  if (!voiceId) {
+    setCustomVoiceFormError('voice_id is required.');
+    return;
+  }
+
+  if (findVoiceById(voiceId)) {
+    setCustomVoiceFormError('voice_id already exists.');
+    return;
+  }
+
+  const newVoice = normalizeCustomVoice({
+    id: voiceId,
+    name: name || voiceId,
+    desc: desc || 'Custom voice',
+    lang,
+    icon: 'mdi:account-voice',
+    custom: true
+  });
+
+  if (!newVoice) {
+    setCustomVoiceFormError('Invalid custom voice config.');
+    return;
+  }
+
+  customVoices.unshift(newVoice);
+  saveCustomVoices();
+  renderVoiceList();
+  toggleCustomVoiceForm(false);
+  await selectVoice(newVoice.id);
+}
+
+function initCustomVoices() {
+  customVoices = loadCustomVoices();
+  toggleCustomVoiceForm(false);
+
+  if (addCustomVoiceBtn) {
+    addCustomVoiceBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isHidden = customVoiceForm?.classList.contains('hidden');
+      toggleCustomVoiceForm(isHidden);
+    });
+  }
+
+  if (customVoiceSaveBtn) {
+    customVoiceSaveBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      submitCustomVoiceForm();
+    });
+  }
+
+  if (customVoiceCancelBtn) {
+    customVoiceCancelBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleCustomVoiceForm(false);
+    });
+  }
+
+  if (customVoiceIdInput) {
+    customVoiceIdInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submitCustomVoiceForm();
+      }
+    });
+  }
+}
+
+async function removeCustomVoice(voiceId) {
+  const exists = customVoices.some((voice) => voice.id === voiceId);
+  if (!exists) return;
+
+  const ok = window.confirm(`Delete custom voice: ${voiceId} ?`);
+  if (!ok) return;
+
+  customVoices = customVoices.filter((voice) => voice.id !== voiceId);
+  saveCustomVoices();
+
+  if (currentSelectedVoice === voiceId) {
+    await selectVoice(currentCharacter.defaultVoice || 'Lovely_Girl');
+    return;
+  }
+
+  renderVoiceList();
+}
 
 function renderVoiceList() {
   voiceList.innerHTML = '';
 
-  VOICE_OPTIONS.forEach(group => {
-    // 筛选：all 显示全部，zh 显示中文和推荐，en 显示英文和推荐
-    if (currentFilter !== 'all' && group.lang !== 'all' && group.lang !== currentFilter) {
-      return;
-    }
+  const groups = getAllVoiceGroups();
+
+  groups.forEach((group) => {
+    const visibleVoices = group.voices.filter((voice) => shouldShowVoiceInFilter(voice, group.lang));
+    if (visibleVoices.length === 0) return;
 
     const groupLabel = document.createElement('div');
     groupLabel.className = 'voice-group-label';
     groupLabel.textContent = group.group;
     voiceList.appendChild(groupLabel);
 
-    group.voices.forEach(voice => {
+    visibleVoices.forEach((voice) => {
       const item = document.createElement('div');
       item.className = 'voice-item' + (voice.id === currentSelectedVoice ? ' active' : '');
       item.innerHTML = `
@@ -1290,25 +1769,33 @@ function renderVoiceList() {
           <div class="voice-name">${voice.name}</div>
           <div class="voice-desc">${voice.desc}</div>
         </div>
-        <button class="voice-preview-btn" data-voice="${voice.id}" title="试听">
+        <button class="voice-preview-btn" data-voice="${voice.id}" title="Preview">
           <span class="iconify" data-icon="mdi:play"></span>
         </button>
+        ${voice.custom ? `<button class="voice-remove-btn" data-remove-voice="${voice.id}" title="Delete custom voice"><span class="iconify" data-icon="mdi:delete-outline"></span></button>` : ''}
         ${voice.id === currentSelectedVoice ? '<span class="voice-check"><span class="iconify" data-icon="mdi:check"></span></span>' : ''}
       `;
 
-      // 点击选择音色
       item.addEventListener('click', (e) => {
-        if (!e.target.closest('.voice-preview-btn')) {
-          selectVoice(voice.id);
+        if (e.target.closest('.voice-preview-btn') || e.target.closest('.voice-remove-btn')) {
+          return;
         }
+        selectVoice(voice.id);
       });
 
-      // 试听按钮
       const previewBtn = item.querySelector('.voice-preview-btn');
       previewBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         previewVoice(voice.id, voice.name);
       });
+
+      const removeBtn = item.querySelector('.voice-remove-btn');
+      if (removeBtn) {
+        removeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          removeCustomVoice(voice.id);
+        });
+      }
 
       voiceList.appendChild(item);
     });
@@ -1354,14 +1841,13 @@ async function previewVoice(voiceId, voiceName) {
 async function selectVoice(voiceId) {
   currentSelectedVoice = voiceId;
   await window.electronAPI.tts.setVoice(voiceId);
+  saveSelectedVoice(voiceId);
   renderVoiceList();
-  // 找到音色名字显示提示
-  let voiceName = voiceId;
-  for (const g of VOICE_OPTIONS) {
-    const v = g.voices.find(v => v.id === voiceId);
-    if (v) { voiceName = v.name; break; }
-  }
-  showBubble(`音色已切换为「${escapeHtml(voiceName)}」`);
+
+  const selected = findVoiceById(voiceId);
+  const voiceName = selected?.name || voiceId;
+  showBubble(`Voice switched: ${escapeHtml(voiceName)}`);
+
   setTimeout(() => {
     voicePanel.style.display = 'none';
   }, 600);
@@ -1373,6 +1859,7 @@ function openVoicePanel() {
     btn.classList.toggle('active', btn.dataset.filter === 'all');
   });
   renderVoiceList();
+  toggleCustomVoiceForm(false);
   voicePanel.style.display = 'flex';
 
   // 绑定筛选按钮事件
@@ -1383,9 +1870,35 @@ function openVoicePanel() {
 
 // 初始化时获取当前音色
 async function initVoice() {
+  const savedVoiceId = loadSelectedVoice();
+  let targetVoiceId = savedVoiceId;
+
+  if (!targetVoiceId) {
+    try {
+      const result = await window.electronAPI.tts.getVoice();
+      if (result.voiceId) {
+        targetVoiceId = result.voiceId;
+      }
+    } catch (e) {}
+  }
+
+  if (!targetVoiceId) {
+    targetVoiceId = currentCharacter.defaultVoice || 'Lovely_Girl';
+  }
+
+  currentSelectedVoice = targetVoiceId;
+
   try {
-    const result = await window.electronAPI.tts.getVoice();
-    if (result.voiceId) currentSelectedVoice = result.voiceId;
+    await window.electronAPI.tts.setVoice(targetVoiceId);
+    saveSelectedVoice(targetVoiceId);
+    return;
+  } catch (e) {}
+
+  const fallbackVoiceId = currentCharacter.defaultVoice || 'Lovely_Girl';
+  currentSelectedVoice = fallbackVoiceId;
+  try {
+    await window.electronAPI.tts.setVoice(fallbackVoiceId);
+    saveSelectedVoice(fallbackVoiceId);
   } catch (e) {}
 }
 
@@ -1399,7 +1912,7 @@ function renderCharacterList() {
   characterList.innerHTML = '';
 
   // 检查角色视频资源是否可用
-  const availableCharacters = ['lobster', 'amy']; // 有视频资源的角色
+  const availableCharacters = AVAILABLE_CHARACTER_IDS; // 有视频资源的角色
 
   Object.values(CHARACTER_PROFILES).forEach(char => {
     const item = document.createElement('div');
@@ -1437,9 +1950,10 @@ async function switchCharacter(characterId) {
   // 更新角色
   currentCharacter = newChar;
   VIDEO_SOURCES = { ...newChar.videos };
+  saveSelectedCharacter(newChar.id);
 
   // 更新光环颜色
-  if (auraAnimator && newChar.auraColors) {
+  if (ENABLE_CHARACTER_BACKGROUND_EFFECTS && auraAnimator && newChar.auraColors) {
     auraAnimator.updateColors(newChar.auraColors);
   }
 
@@ -1447,6 +1961,7 @@ async function switchCharacter(characterId) {
   currentSelectedVoice = newChar.defaultVoice;
   try {
     await window.electronAPI.tts.setVoice(newChar.defaultVoice);
+    saveSelectedVoice(newChar.defaultVoice);
   } catch (e) {}
 
   // 关闭面板
