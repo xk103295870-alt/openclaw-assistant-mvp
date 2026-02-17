@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OpenClaw Assistant</title>
+  <title>Claw K</title>
   <link rel="stylesheet" href="styles.css">
   <script src="https://code.iconify.design/3/3.1.0/iconify.min.js"></script>
 </head>
@@ -12,7 +12,7 @@
     <video class="mini-orb-avatar" id="mini-orb-video" autoplay muted loop playsinline>
       <source src="lobster-idle.mp4" type="video/mp4">
     </video>
-    <button class="mini-expand-btn" id="mini-expand-btn" title="展开">
+    <button class="mini-expand-btn" id="mini-expand-btn" title="展开" data-i18n-title="header.expand">
       <span class="iconify" data-icon="mdi:arrow-expand"></span>
     </button>
     <div class="mini-pulse"></div>
@@ -21,23 +21,34 @@
   <div class="widget-container" id="widget-container">
     <header class="app-header" id="app-header">
       <div class="header-main">
-        <h1 class="app-title">OpenClaw Assistant</h1>
+        <h1 class="app-title" data-i18n="app.brand">Claw K</h1>
         <div class="state-indicator" id="state-indicator">
           <span class="state-dot"></span>
           <span class="state-text" id="state-text">点击我开始对话</span>
         </div>
       </div>
+      <div class="header-drag-fill" aria-hidden="true"></div>
       <div class="widget-controls">
-        <button id="character-select-btn" class="tiny-btn" title="切换角色">
+        <button id="character-select-btn" class="tiny-btn" title="切换角色" data-i18n-title="header.character">
           <span class="iconify" data-icon="mdi:account-switch"></span>
         </button>
-        <button id="voice-select-btn" class="tiny-btn" title="切换音色">
+        <button id="voice-select-btn" class="tiny-btn" title="切换音色" data-i18n-title="header.voice">
           <span class="iconify" data-icon="mdi:music-note"></span>
         </button>
-        <button id="minimize-btn" class="tiny-btn" title="最小化">
+        <button id="skills-panel-btn" class="tiny-btn" title="技能" data-i18n-title="header.skills">
+          <span class="iconify" data-icon="mdi:puzzle-outline"></span>
+        </button>
+        <button id="cron-panel-btn" class="tiny-btn" title="定时任务" data-i18n-title="header.cron">
+          <span class="iconify" data-icon="mdi:clock-outline"></span>
+        </button>
+        <button id="language-toggle-btn" class="tiny-btn lang-btn" type="button" title="切换语言" data-i18n-title="header.language">
+          <span class="iconify" data-icon="mdi:translate"></span>
+          <span class="lang-badge" id="language-label">中</span>
+        </button>
+        <button id="minimize-btn" class="tiny-btn" title="最小化" data-i18n-title="header.minimize">
           <span class="iconify" data-icon="mdi:minus"></span>
         </button>
-        <button id="close-btn" class="tiny-btn close" title="关闭">
+        <button id="close-btn" class="tiny-btn close" title="关闭" data-i18n-title="header.close">
           <span class="iconify" data-icon="mdi:close"></span>
         </button>
       </div>
@@ -62,33 +73,38 @@
           </video>
           <div class="tap-hint" id="tap-hint">
             <span class="iconify tap-icon" data-icon="mdi:gesture-tap"></span>
-            <span class="tap-text">点击我开始对话</span>
+            <span class="tap-text" data-i18n="state.idle">点击我开始对话</span>
           </div>
         </div>
       </section>
 
       <section class="chat-panel">
         <div class="chat-panel-header">
-          <h2 class="chat-panel-title">聊天记录</h2>
-          <button id="clear-history-btn" class="clear-history-btn" type="button">清空</button>
+          <h2 class="chat-panel-title" data-i18n="chat.title">聊天记录</h2>
+          <button id="clear-history-btn" class="clear-history-btn" type="button" data-i18n="chat.clear">清空</button>
         </div>
 
         <div class="chat-history" id="chat-history">
-          <div class="chat-empty" id="chat-empty">暂无聊天记录，开始对话吧。</div>
+          <div class="chat-empty" id="chat-empty" data-i18n="chat.empty">暂无聊天记录，开始对话吧。</div>
         </div>
 
         <div class="text-input-area" id="text-input-area">
-          <input type="text" id="text-input" class="text-input" placeholder="输入文字与我对话..." />
-          <button id="send-btn" class="send-btn" title="发送">
+          <button id="file-upload-btn" class="input-action-btn" type="button" title="上传附件" data-i18n-title="chat.upload">
+            <span class="iconify" data-icon="mdi:paperclip"></span>
+          </button>
+          <input id="file-input" type="file" multiple hidden />
+          <input type="text" id="text-input" class="text-input" placeholder="输入文字与我对话..." data-i18n-placeholder="chat.inputPlaceholder" />
+          <button id="send-btn" class="send-btn" title="发送" data-i18n-title="chat.send">
             <span class="iconify" data-icon="mdi:send"></span>
           </button>
         </div>
+        <div class="attachment-summary" id="attachment-summary" style="display: none;"></div>
       </section>
     </div>
 
     <div class="character-panel" id="character-panel" style="display: none;">
       <div class="character-panel-header">
-        <span class="character-panel-title">选择角色</span>
+        <span class="character-panel-title" data-i18n="character.title">选择角色</span>
         <button id="close-character-panel" class="tiny-btn" type="button">
           <span class="iconify" data-icon="mdi:close"></span>
         </button>
@@ -98,9 +114,9 @@
 
     <div class="voice-panel" id="voice-panel" style="display: none;">
       <div class="voice-panel-header">
-        <span class="voice-panel-title">选择音色</span>
+        <span class="voice-panel-title" data-i18n="voice.title">选择音色</span>
         <div class="voice-panel-actions">
-          <button id="add-custom-voice-btn" class="tiny-btn" type="button" title="新增自定义音色">
+          <button id="add-custom-voice-btn" class="tiny-btn" type="button" title="新增自定义音色" data-i18n-title="voice.addCustomTitle">
             <span class="iconify" data-icon="mdi:plus"></span>
           </button>
           <button id="close-voice-panel" class="tiny-btn" type="button">
@@ -109,38 +125,129 @@
         </div>
       </div>
       <div class="voice-filter">
-        <button class="filter-btn active" data-filter="all" type="button">全部</button>
-        <button class="filter-btn" data-filter="zh" type="button">中文</button>
+        <button class="filter-btn active" data-filter="all" type="button" data-i18n="voice.filter.all">全部</button>
+        <button class="filter-btn" data-filter="zh" type="button" data-i18n="voice.filter.zh">中文</button>
         <button class="filter-btn" data-filter="en" type="button">English</button>
       </div>
       <div class="custom-voice-form hidden" id="custom-voice-form">
         <div class="custom-voice-form-row">
-          <label for="custom-voice-id">Voice ID</label>
-          <input id="custom-voice-id" class="custom-voice-input" type="text" placeholder="e.g. ttv-voice-xxxx" />
+          <label for="custom-voice-id" data-i18n="voice.custom.id">Voice ID</label>
+          <input id="custom-voice-id" class="custom-voice-input" type="text" placeholder="e.g. ttv-voice-xxxx" data-i18n-placeholder="voice.custom.idPlaceholder" />
         </div>
         <div class="custom-voice-form-row">
-          <label for="custom-voice-name">Name</label>
-          <input id="custom-voice-name" class="custom-voice-input" type="text" placeholder="Display name (optional)" />
+          <label for="custom-voice-name" data-i18n="voice.custom.name">Name</label>
+          <input id="custom-voice-name" class="custom-voice-input" type="text" placeholder="Display name (optional)" data-i18n-placeholder="voice.custom.namePlaceholder" />
         </div>
         <div class="custom-voice-form-row">
-          <label for="custom-voice-desc">Description</label>
-          <input id="custom-voice-desc" class="custom-voice-input" type="text" placeholder="Description (optional)" />
+          <label for="custom-voice-desc" data-i18n="voice.custom.description">Description</label>
+          <input id="custom-voice-desc" class="custom-voice-input" type="text" placeholder="Description (optional)" data-i18n-placeholder="voice.custom.descriptionPlaceholder" />
         </div>
         <div class="custom-voice-form-row">
-          <label for="custom-voice-lang">Language</label>
+          <label for="custom-voice-lang" data-i18n="voice.custom.language">Language</label>
           <select id="custom-voice-lang" class="custom-voice-select">
             <option value="all">All</option>
-            <option value="zh">??</option>
+            <option value="zh" data-i18n="voice.filter.zh">中文</option>
             <option value="en">English</option>
           </select>
         </div>
         <div class="custom-voice-form-error" id="custom-voice-form-error"></div>
         <div class="custom-voice-form-actions">
-          <button id="custom-voice-save-btn" class="filter-btn active" type="button">Save</button>
-          <button id="custom-voice-cancel-btn" class="filter-btn" type="button">Cancel</button>
+          <button id="custom-voice-save-btn" class="filter-btn active" type="button" data-i18n="common.save">Save</button>
+          <button id="custom-voice-cancel-btn" class="filter-btn" type="button" data-i18n="common.cancel">Cancel</button>
         </div>
       </div>
       <div class="voice-list" id="voice-list"></div>
+    </div>
+
+    <div class="skills-panel" id="skills-panel" style="display: none;">
+      <div class="skills-panel-header">
+        <span class="skills-panel-title" data-i18n="skills.title">技能</span>
+        <div class="skills-panel-actions">
+          <button id="open-managed-skills-dir-btn" class="tiny-btn" type="button" title="打开技能目录" data-i18n-title="skills.openDir">
+            <span class="iconify" data-icon="mdi:folder-open-outline"></span>
+          </button>
+          <button id="refresh-skills-btn" class="tiny-btn" type="button" title="刷新技能" data-i18n-title="skills.refresh">
+            <span class="iconify" data-icon="mdi:refresh"></span>
+          </button>
+          <button id="close-skills-panel" class="tiny-btn" type="button">
+            <span class="iconify" data-icon="mdi:close"></span>
+          </button>
+        </div>
+      </div>
+      <div class="skills-install-form" id="skills-install-form">
+        <input
+          id="skills-slug-input"
+          class="skills-slug-input"
+          type="text"
+          placeholder="skill slug, e.g. owner/my-skill"
+          data-i18n-placeholder="skills.add.placeholder"
+        />
+        <button id="skills-install-btn" class="skill-action-btn primary" type="button" data-i18n="skills.add.button">添加技能</button>
+      </div>
+      <div class="skills-install-hint" id="skills-install-hint" data-i18n="skills.add.hint">
+        通过 ClawHub slug 安装，等价于 `clawhub install <skill-slug>`。
+      </div>
+      <div class="skills-panel-meta" id="skills-panel-meta"></div>
+      <div class="skills-panel-error" id="skills-panel-error"></div>
+      <div class="skills-list" id="skills-list"></div>
+    </div>
+
+    <div class="cron-panel" id="cron-panel" style="display: none;">
+      <div class="cron-panel-header">
+        <span class="cron-panel-title" data-i18n="cron.title">定时任务</span>
+        <div class="cron-panel-actions">
+          <button id="refresh-cron-btn" class="tiny-btn" type="button" title="刷新任务" data-i18n-title="cron.refresh">
+            <span class="iconify" data-icon="mdi:refresh"></span>
+          </button>
+          <button id="close-cron-panel" class="tiny-btn" type="button">
+            <span class="iconify" data-icon="mdi:close"></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="cron-create-form" id="cron-create-form">
+        <div class="cron-form-row cron-form-row-2col">
+          <label for="cron-name-input" data-i18n="cron.form.name">名称</label>
+          <input id="cron-name-input" type="text" class="custom-voice-input" placeholder="例如：早报" data-i18n-placeholder="cron.form.namePlaceholder" />
+        </div>
+        <div class="cron-form-row">
+          <label for="cron-desc-input" data-i18n="cron.form.description">描述（可选）</label>
+          <input id="cron-desc-input" type="text" class="custom-voice-input" placeholder="例如：每天 8 点发送总结" data-i18n-placeholder="cron.form.descriptionPlaceholder" />
+        </div>
+        <div class="cron-form-row cron-form-row-2col">
+          <label for="cron-expr-input" data-i18n="cron.form.expr">Cron 表达式</label>
+          <input id="cron-expr-input" type="text" class="custom-voice-input" placeholder="例如：0 8 * * *" data-i18n-placeholder="cron.form.exprPlaceholder" />
+        </div>
+        <div class="cron-form-row">
+          <label for="cron-tz-input" data-i18n="cron.form.tz">时区（可选）</label>
+          <input id="cron-tz-input" type="text" class="custom-voice-input" placeholder="例如：America/Los_Angeles" data-i18n-placeholder="cron.form.tzPlaceholder" />
+        </div>
+        <div class="cron-form-row">
+          <label for="cron-message-input" data-i18n="cron.form.message">任务内容</label>
+          <textarea id="cron-message-input" class="cron-message-input" placeholder="例如：总结昨晚到现在的重要消息" data-i18n-placeholder="cron.form.messagePlaceholder"></textarea>
+        </div>
+        <div class="cron-form-row cron-form-row-inline">
+          <label for="cron-delivery-channel-input" data-i18n="cron.form.delivery">推送通道（可选）</label>
+          <select id="cron-delivery-channel-input" class="custom-voice-select">
+            <option value="" data-i18n="cron.form.deliveryNone">不指定</option>
+            <option value="last">last</option>
+            <option value="whatsapp">whatsapp</option>
+            <option value="telegram">telegram</option>
+            <option value="discord">discord</option>
+            <option value="slack">slack</option>
+            <option value="imessage">imessage</option>
+            <option value="signal">signal</option>
+          </select>
+          <input id="cron-delivery-to-input" type="text" class="custom-voice-input" placeholder="to 目标（可选）" data-i18n-placeholder="cron.form.toPlaceholder" />
+        </div>
+        <div class="cron-form-actions">
+          <button id="cron-create-btn" class="cron-form-btn primary" type="button" data-i18n="cron.form.create">创建任务</button>
+          <button id="cron-reset-btn" class="cron-form-btn" type="button" data-i18n="common.reset">清空</button>
+        </div>
+      </div>
+
+      <div class="cron-panel-error" id="cron-panel-error"></div>
+      <div class="cron-list" id="cron-list"></div>
     </div>
   </div>
 

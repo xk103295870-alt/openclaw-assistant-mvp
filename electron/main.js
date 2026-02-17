@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain, Notification, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Notification, shell, screen } = require('electron');
 const path = require('path');
+const { spawn } = require('child_process');
 const { createClient, LiveTranscriptionEvents } = require('@deepgram/sdk');
 const WebSocket = require('ws');
 require('dotenv').config();
@@ -761,6 +762,113 @@ async function chatWithClawdbotWithFallback(message) {
   throw new Error('No available OpenClaw session key.');
 }
 
+// ===== Gateway RPC helpers for Skills/Cron =====
+async function callGatewayRpc(method, params = {}) {
+  await connectClawdbot();
+  return clawdbotRequest(method, params);
+}
+
+function normalizeSkillSlug(rawValue) {
+  const slug = String(rawValue || '').trim();
+  if (!slug) return '';
+  if (!/^[A-Za-z0-9._/-]+$/.test(slug)) return '';
+  return slug;
+}
+
+function runProcess(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd || process.cwd(),
+      env: process.env,
+      windowsHide: true,
+      shell: false
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', (error) => {
+      reject(error);
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve({ code, stdout, stderr });
+        return;
+      }
+
+      const message = (stderr || stdout || `${command} exited with code ${code}`).trim();
+      const error = new Error(message);
+      error.code = code;
+      error.stdout = stdout;
+      error.stderr = stderr;
+      reject(error);
+    });
+  });
+}
+
+async function installSkillFromClawHub(slug, workspaceDir) {
+  const installArgs = ['install', slug];
+  if (workspaceDir) {
+    installArgs.push('--workdir', workspaceDir);
+  }
+
+  const primaryCommand = process.platform === 'win32' ? 'clawhub.cmd' : 'clawhub';
+  const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+
+  try {
+    return await runProcess(primaryCommand, installArgs, { cwd: workspaceDir || process.cwd() });
+  } catch (primaryError) {
+    const fallbackArgs = ['-y', 'clawhub', ...installArgs];
+    const fallbackResult = await runProcess(npxCommand, fallbackArgs, {
+      cwd: workspaceDir || process.cwd()
+    });
+    return {
+      ...fallbackResult,
+      usedFallback: true,
+      primaryError: primaryError?.message || String(primaryError)
+    };
+  }
+}
+
+function formatCronScheduleLabel(schedule) {
+  if (!schedule || typeof schedule !== 'object') return 'unknown';
+
+  const kind = String(schedule.kind || '').trim();
+  if (kind === 'cron') {
+    const expr = String(schedule.expr || '').trim();
+    const tz = String(schedule.tz || '').trim();
+    return tz ? `${expr} (${tz})` : expr || 'cron';
+  }
+  if (kind === 'every') {
+    const everyMs = Number(schedule.everyMs || 0);
+    if (!Number.isFinite(everyMs) || everyMs <= 0) return 'every';
+    if (everyMs % 86400000 === 0) return `every ${everyMs / 86400000} day(s)`;
+    if (everyMs % 3600000 === 0) return `every ${everyMs / 3600000} hour(s)`;
+    if (everyMs % 60000 === 0) return `every ${everyMs / 60000} minute(s)`;
+    return `every ${everyMs} ms`;
+  }
+  if (kind === 'at') {
+    const at = String(schedule.at || '').trim();
+    return at || 'at';
+  }
+  return kind || 'schedule';
+}
+
+function extractCronMessage(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  if (payload.kind === 'agentTurn') return String(payload.message || '').trim();
+  if (payload.kind === 'systemEvent') return String(payload.text || '').trim();
+  return String(payload.message || payload.text || '').trim();
+}
+
 // ===== 窗口创建 =====
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -770,7 +878,7 @@ function createWindow() {
     minHeight: MIN_FULL_HEIGHT,
     frame: false,
     transparent: true,
-    alwaysOnTop: true,
+    alwaysOnTop: false,
     resizable: true,
     skipTaskbar: false,
     webPreferences: {
@@ -818,6 +926,266 @@ ipcMain.handle('openclaw:executeCommand', async (event, command) => {
   }
 });
 // ===== 异步任务管理 =====
+// ===== Skills / Cron manager (official gateway skills.* / cron.*) =====
+ipcMain.handle('gateway:rpc', async (_, method, params = {}) => {
+  try {
+    const payload = await callGatewayRpc(method, params);
+    return { success: true, payload };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle('skills:list', async () => {
+  try {
+    const report = await callGatewayRpc('skills.status', {});
+    return { success: true, report };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle('skills:setEnabled', async (_, skillKey, enabled) => {
+  try {
+    await callGatewayRpc('skills.update', {
+      skillKey: String(skillKey || '').trim(),
+      enabled: !!enabled
+    });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle('skills:setApiKey', async (_, skillKey, apiKey) => {
+  try {
+    await callGatewayRpc('skills.update', {
+      skillKey: String(skillKey || '').trim(),
+      apiKey: String(apiKey || '')
+    });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle('skills:setEnv', async (_, skillKey, env) => {
+  try {
+    await callGatewayRpc('skills.update', {
+      skillKey: String(skillKey || '').trim(),
+      env: env && typeof env === 'object' ? env : {}
+    });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle('skills:install', async (_, params) => {
+  try {
+    const name = String(params?.name || '').trim();
+    const installId = String(params?.installId || '').trim();
+    if (!name || !installId) {
+      return { success: false, error: 'name and installId are required' };
+    }
+
+    const payload = await callGatewayRpc('skills.install', {
+      name,
+      installId,
+      timeoutMs: 120000
+    });
+    return { success: true, payload };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle('skills:installFromClawHub', async (_, params) => {
+  try {
+    const slug = normalizeSkillSlug(params?.slug);
+    if (!slug) {
+      return {
+        success: false,
+        error: 'Invalid skill slug. Allowed characters: letters, numbers, dot, underscore, slash, hyphen.'
+      };
+    }
+
+    let workspaceDir = String(params?.workspaceDir || '').trim();
+    if (!workspaceDir) {
+      try {
+        const report = await callGatewayRpc('skills.status', {});
+        workspaceDir = String(report?.workspaceDir || '').trim();
+      } catch (error) {
+        workspaceDir = '';
+      }
+    }
+    if (!workspaceDir) {
+      workspaceDir = process.cwd();
+    }
+
+    const runResult = await installSkillFromClawHub(slug, workspaceDir);
+    const output = String(runResult?.stdout || runResult?.stderr || '').trim();
+
+    return {
+      success: true,
+      slug,
+      workspaceDir,
+      output,
+      usedFallback: !!runResult?.usedFallback
+    };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle('skills:openManagedDir', async () => {
+  try {
+    const report = await callGatewayRpc('skills.status', {});
+    const fs = require('fs');
+
+    const workspaceDir = String(report?.workspaceDir || '').trim();
+    const workspaceSkillsDir = workspaceDir ? path.join(workspaceDir, 'skills') : '';
+    const managedDir = String(report?.managedSkillsDir || '').trim();
+    const candidates = [workspaceSkillsDir, managedDir].filter(Boolean);
+
+    if (candidates.length === 0) {
+      return { success: false, error: 'workspaceDir/managedSkillsDir not available' };
+    }
+
+    if (workspaceSkillsDir) {
+      try {
+        fs.mkdirSync(workspaceSkillsDir, { recursive: true });
+      } catch (error) {}
+    }
+
+    const openErrors = [];
+    for (const dir of candidates) {
+      const openResult = await shell.openPath(dir);
+      if (!openResult) {
+        return { success: true, path: dir };
+      }
+      openErrors.push(`${dir}: ${openResult}`);
+    }
+
+    return {
+      success: false,
+      error: openErrors.join(' | ') || 'open skills directory failed'
+    };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle('cron:list', async () => {
+  try {
+    const result = await callGatewayRpc('cron.list', { includeDisabled: true });
+    const jobs = Array.isArray(result?.jobs) ? result.jobs : [];
+    const mapped = jobs.map((job) => ({
+      id: String(job?.id || job?.jobId || '').trim(),
+      name: String(job?.name || '(unnamed)'),
+      description: String(job?.description || ''),
+      enabled: job?.enabled !== false,
+      schedule: job?.schedule || null,
+      scheduleLabel: formatCronScheduleLabel(job?.schedule),
+      payload: job?.payload || null,
+      message: extractCronMessage(job?.payload),
+      delivery: job?.delivery || null,
+      nextRunAtMs: Number.isFinite(job?.state?.nextRunAtMs) ? job.state.nextRunAtMs : null,
+      lastRunAtMs: Number.isFinite(job?.state?.lastRunAtMs) ? job.state.lastRunAtMs : null,
+      lastStatus: job?.state?.lastStatus || null,
+      lastError: job?.state?.lastError || null
+    }));
+    return { success: true, jobs: mapped };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle('cron:add', async (_, input) => {
+  try {
+    const name = String(input?.name || '').trim();
+    const message = String(input?.message || '').trim();
+    const scheduleExpr = String(input?.scheduleExpr || '').trim();
+    const scheduleTz = String(input?.scheduleTz || '').trim();
+    const description = String(input?.description || '').trim();
+    const enabled = input?.enabled !== false;
+    const deliveryChannel = String(input?.deliveryChannel || '').trim();
+    const deliveryTo = String(input?.deliveryTo || '').trim();
+
+    if (!name || !message || !scheduleExpr) {
+      return { success: false, error: 'name, message, and scheduleExpr are required' };
+    }
+
+    const params = {
+      name,
+      description: description || undefined,
+      enabled,
+      // Official cron.add shape in docs: schedule + sessionTarget + wakeMode + payload
+      schedule: {
+        kind: 'cron',
+        expr: scheduleExpr,
+        ...(scheduleTz ? { tz: scheduleTz } : {})
+      },
+      sessionTarget: 'isolated',
+      wakeMode: 'next-heartbeat',
+      payload: {
+        kind: 'agentTurn',
+        message
+      },
+      ...(deliveryChannel || deliveryTo
+        ? {
+            delivery: {
+              mode: 'announce',
+              channel: deliveryChannel || 'last',
+              ...(deliveryTo ? { to: deliveryTo } : {})
+            }
+          }
+        : {})
+    };
+
+    const job = await callGatewayRpc('cron.add', params);
+    return { success: true, job };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle('cron:toggle', async (_, id, enabled) => {
+  try {
+    await callGatewayRpc('cron.update', { id: String(id || ''), patch: { enabled: !!enabled } });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle('cron:runNow', async (_, id) => {
+  try {
+    const result = await callGatewayRpc('cron.run', { id: String(id || ''), mode: 'force' });
+    return { success: true, result };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle('cron:remove', async (_, id) => {
+  try {
+    const result = await callGatewayRpc('cron.remove', { id: String(id || '') });
+    return { success: true, result };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
+ipcMain.handle('shell:openPath', async (_, pathValue) => {
+  try {
+    const output = await shell.openPath(String(pathValue || ''));
+    return { success: !output, error: output || null };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+});
+
 ipcMain.handle('task:create', async (event, message) => {
   const taskId = taskManager.createTask(message);
   return { success: true, taskId };
@@ -1110,10 +1478,38 @@ const FULL_HEIGHT = 760;
 const MIN_FULL_WIDTH = 920;
 const MIN_FULL_HEIGHT = 620;
 const MINI_SIZE = 64;
+const MINI_MARGIN_X = 20;
+const MINI_MARGIN_BOTTOM = 120;
 let isMiniMode = false;
+
+function getDefaultMiniPosition() {
+  const activeDisplay = mainWindow ? screen.getDisplayMatching(mainWindow.getBounds()) : screen.getPrimaryDisplay();
+  const workArea = activeDisplay.workArea;
+  return {
+    x: workArea.x + workArea.width - MINI_SIZE - MINI_MARGIN_X,
+    y: workArea.y + workArea.height - MINI_SIZE - MINI_MARGIN_BOTTOM
+  };
+}
+
+function clampMiniPosition(x, y) {
+  const nextX = Math.round(Number(x));
+  const nextY = Math.round(Number(y));
+  const display = screen.getDisplayNearestPoint({
+    x: nextX + Math.floor(MINI_SIZE / 2),
+    y: nextY + Math.floor(MINI_SIZE / 2)
+  });
+  const workArea = display.workArea;
+  const maxX = workArea.x + workArea.width - MINI_SIZE;
+  const maxY = workArea.y + workArea.height - MINI_SIZE;
+  return {
+    x: Math.min(Math.max(nextX, workArea.x), maxX),
+    y: Math.min(Math.max(nextY, workArea.y), maxY)
+  };
+}
 
 ipcMain.on('window:minimize', () => {
   if (!mainWindow) return;
+  mainWindow.setAlwaysOnTop(false);
   // 切换到悬浮球模式
   isMiniMode = true;
   const bounds = mainWindow.getBounds();
@@ -1124,16 +1520,19 @@ ipcMain.on('window:minimize', () => {
   mainWindow.setMinimumSize(MINI_SIZE, MINI_SIZE);
   mainWindow.setSize(MINI_SIZE, MINI_SIZE);
   // 移动到屏幕右下区域
-  const { screen } = require('electron');
-  const display = screen.getPrimaryDisplay();
-  const x = display.workArea.x + display.workArea.width - MINI_SIZE - 20;
-  const y = display.workArea.y + display.workArea.height - MINI_SIZE - 20;
-  mainWindow.setPosition(x, y);
+  const hasSavedMiniPosition = Number.isFinite(mainWindow._miniX) && Number.isFinite(mainWindow._miniY);
+  const miniPos = hasSavedMiniPosition
+    ? clampMiniPosition(mainWindow._miniX, mainWindow._miniY)
+    : getDefaultMiniPosition();
+  mainWindow._miniX = miniPos.x;
+  mainWindow._miniY = miniPos.y;
+  mainWindow.setPosition(miniPos.x, miniPos.y);
   mainWindow.webContents.send('window:miniMode', true);
 });
 
 ipcMain.on('window:restore', () => {
   if (!mainWindow) return;
+  mainWindow.setAlwaysOnTop(false);
   isMiniMode = false;
   mainWindow.setMinimumSize(MIN_FULL_WIDTH, MIN_FULL_HEIGHT);
   mainWindow.setSize(FULL_WIDTH, FULL_HEIGHT);
@@ -1148,6 +1547,34 @@ ipcMain.on('window:restore', () => {
 
 ipcMain.on('window:close', () => {
   if (mainWindow) mainWindow.close();
+});
+
+ipcMain.handle('window:getBounds', () => {
+  if (!mainWindow) {
+    return { success: false, error: 'main window not available' };
+  }
+  return { success: true, bounds: mainWindow.getBounds() };
+});
+
+ipcMain.handle('window:moveMiniWindow', (_, position) => {
+  if (!mainWindow) {
+    return { success: false, error: 'main window not available' };
+  }
+  if (!isMiniMode) {
+    return { success: false, error: 'window is not in mini mode' };
+  }
+
+  const x = Number(position?.x);
+  const y = Number(position?.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return { success: false, error: 'invalid mini window position' };
+  }
+
+  const next = clampMiniPosition(x, y);
+  mainWindow.setPosition(next.x, next.y);
+  mainWindow._miniX = next.x;
+  mainWindow._miniY = next.y;
+  return { success: true, bounds: mainWindow.getBounds() };
 });
 
 // ===== 文件操作 =====

@@ -1,4 +1,4 @@
-// ===== 应用状态 =====
+﻿// ===== 搴旂敤鐘舵€?=====
 let appState = 'welcome'; // welcome | idle | listening | thinking | speaking | followup | goodbye
 let isFirstLaunch = true;
 let isRecording = false;
@@ -15,26 +15,21 @@ const ENABLE_CHARACTER_BACKGROUND_EFFECTS = false;
 const ENABLE_AVATAR_HEAD_BUBBLE = false;
 let executeTimer = null;
 let accumulatedTranscript = '';
-let lastAIResponse = ''; // 缓存最近一次 AI 回复，用于打断后查看
+let lastAIResponse = ''; // 缂撳瓨鏈€杩戜竴娆?AI 鍥炲锛岀敤浜庢墦鏂悗鏌ョ湅
 let countdownInterval = null;
 
-// ===== 角色系统 =====
+// ===== 瑙掕壊绯荤粺 =====
 const CHARACTER_PROFILES = {
   lobster: {
     id: 'lobster',
-    name: '小虾米',
-    desc: '活泼可爱的龙虾助手',
+    name: '小龙虾',
+    desc: '活泼可爱的助手角色',
     icon: 'mdi:fish',
-    welcomeText: '大家好，我是你的AI助手小虾米，我可以帮你做一切事儿，有什么可以帮到你的？',
+    welcomeText: '你好，我是你的助手小龙虾。有什么我可以帮你？',
     thinkingPrompts: [
-      '请稍等，我帮您查询一下~',
-      '让我想想怎么帮您...',
-      '正在努力思考中...',
-      '马上就好，稍等片刻~',
-      '让我看看能帮您做什么...',
-      '收到！正在处理中...',
-      '好的，我来帮您搞定~',
-      '稍等一下，马上给您答案！'
+      '请稍等，我正在处理...',
+      '让我想一下...',
+      '正在为你查询信息...'
     ],
     videos: {
       welcome: 'lobster-welcome.mp4',
@@ -58,21 +53,11 @@ const CHARACTER_PROFILES = {
     name: 'Amy',
     desc: '温柔知性的女助手',
     icon: 'mdi:account-heart',
-    welcomeText: '你好，我是Amy，很高兴为你服务！有什么我可以帮助你的吗？',
+    welcomeText: '你好，我是 Amy，很高兴为你服务。',
     thinkingPrompts: [
-      '请稍等，让我想想...',
-      '正在为你查找...',
-      '稍等片刻~',
-      '让我看看...',
-      '好的，马上处理...',
+      '请稍等，我来查一下...',
       '正在思考中...',
-    ],
-    // 查询前的提示语（先播放这个再执行查询）
-    preQueryPrompts: [
-      '好的，Amy马上帮哥哥去查询',
-      '收到，Amy这就去查',
-      '好的哥哥，Amy这就去看看',
-      '明白了，Amy马上处理',
+      '马上就好...'
     ],
     videos: {
       welcome: 'amy-welcome.mp4',
@@ -98,16 +83,9 @@ const CHARACTER_PROFILES = {
     icon: 'mdi:account-star',
     welcomeText: 'Hi, I am Kelly. Ready when you are.',
     thinkingPrompts: [
-      '请稍等，Kelly正在思考...',
-      'Kelly正在为你查询，请稍候...',
-      '收到，Kelly正在处理你的请求...',
-      '明白了，Kelly马上给你答案...'
-    ],
-    preQueryPrompts: [
-      '好的，kelly马上帮你去查询',
-      '收到，kelly这就去查',
-      '好的，kelly这就去看看',
-      '明白了，kelly马上处理'
+      '嗯。让我多想想.',
+      '正在为你工作呢',
+      '快想好了，别催我哟'
     ],
     videos: {
       welcome: 'kelly-welcome.mp4',
@@ -131,14 +109,11 @@ const CHARACTER_PROFILES = {
     name: '喵助理',
     desc: '优雅慵懒的猫咪助手',
     icon: 'mdi:cat',
-    welcomeText: '喵～我是喵助理，有什么需要帮忙的喵？',
+    welcomeText: '喵，我是喵助理，有什么要我帮忙的吗？',
     thinkingPrompts: [
-      '喵～让我想想...',
-      '正在思考喵～',
-      '稍等一下喵～',
-      '让喵查查看...',
-      '喵在努力思考了～',
-      '马上就好喵！',
+      '喵，正在想办法...',
+      '稍等一下...',
+      '我在查询中...'
     ],
     videos: {
       welcome: 'cat-welcome.mp4',
@@ -162,14 +137,11 @@ const CHARACTER_PROFILES = {
     name: '机甲助手',
     desc: '高效精准的机器人助手',
     icon: 'mdi:robot',
-    welcomeText: '系统已就绪。我是机甲助手，随时为您效劳。',
+    welcomeText: '系统已就绪，我是机甲助手。',
     thinkingPrompts: [
       '正在分析数据...',
-      '运算处理中...',
-      '检索信息中...',
-      '系统处理中，请稍候...',
-      '正在执行分析...',
-      '数据处理中...',
+      '计算处理中...',
+      '检索信息中...'
     ],
     videos: {
       welcome: 'robot-welcome.mp4',
@@ -195,17 +167,17 @@ const AVAILABLE_CHARACTER_IDS = ['lobster', 'amy', 'kelly'];
 const CHARACTER_SELECTION_STORAGE_KEY = 'openclaw_selected_character_v1';
 const VOICE_SELECTION_STORAGE_KEY = 'openclaw_selected_voice_v1';
 
-// 当前角色的视频状态映射（动态切换）
+// 褰撳墠瑙掕壊鐨勮棰戠姸鎬佹槧灏勶紙鍔ㄦ€佸垏鎹級
 let VIDEO_SOURCES = { ...currentCharacter.videos };
 
-// 追问后等待用户回复的超时（30秒无响应回到idle）
+// 杩介棶鍚庣瓑寰呯敤鎴峰洖澶嶇殑瓒呮椂锛?0绉掓棤鍝嶅簲鍥炲埌idle锛?
 const FOLLOWUP_TIMEOUT = 30000;
-// 气泡自动隐藏时间
+// 姘旀场鑷姩闅愯棌鏃堕棿
 const BUBBLE_AUTO_HIDE = 12000;
-// 延迟执行时间（用户停顿后等待的时间，从10秒优化为3秒）
+// 寤惰繜鎵ц鏃堕棿锛堢敤鎴峰仠椤垮悗绛夊緟鐨勬椂闂达紝浠?0绉掍紭鍖栦负3绉掞級
 const EXECUTE_DELAY = 3000;
 
-// 处理中的提示语从当前角色配置获取
+// 澶勭悊涓殑鎻愮ず璇粠褰撳墠瑙掕壊閰嶇疆鑾峰彇
 function getThinkingPrompts() {
   return currentCharacter.thinkingPrompts;
 }
@@ -259,7 +231,7 @@ function loadSelectedVoice() {
   }
 }
 
-// ===== DOM 元素 =====
+// ===== DOM 鍏冪礌 =====
 const speechBubble = document.getElementById('speech-bubble');
 const bubbleText = document.getElementById('bubble-text');
 const statusHint = document.getElementById('status-hint');
@@ -269,10 +241,14 @@ const lobsterChar = document.getElementById('lobster-char');
 const stateIndicator = document.getElementById('state-indicator');
 const stateDot = stateIndicator.querySelector('.state-dot');
 const stateText = document.getElementById('state-text');
+const languageToggleBtn = document.getElementById('language-toggle-btn');
 const minimizeBtn = document.getElementById('minimize-btn');
 const closeBtn = document.getElementById('close-btn');
 const textInput = document.getElementById('text-input');
 const sendBtn = document.getElementById('send-btn');
+const fileUploadBtn = document.getElementById('file-upload-btn');
+const fileInput = document.getElementById('file-input');
+const attachmentSummaryEl = document.getElementById('attachment-summary');
 const tapHint = document.getElementById('tap-hint');
 const listeningPulseRing = document.getElementById('listening-pulse-ring');
 const chatHistoryEl = document.getElementById('chat-history');
@@ -282,8 +258,373 @@ const clearHistoryBtn = document.getElementById('clear-history-btn');
 const CHAT_HISTORY_STORAGE_KEY = 'openclaw_assistant_chat_history_v1';
 const CHAT_HISTORY_LIMIT = 200;
 let chatHistory = [];
+let selectedChatFiles = [];
+const UI_LANGUAGE_STORAGE_KEY = 'clawk_ui_language_v1';
 
-// ===== 初始化光环动画 =====
+const LANGUAGE_REGISTRY = {
+  zh: {
+    'app.windowTitle': 'Claw K',
+    'app.brand': 'Claw K',
+    'header.expand': '\u5c55\u5f00',
+    'header.character': '\u5207\u6362\u89d2\u8272',
+    'header.voice': '\u5207\u6362\u97f3\u8272',
+    'header.skills': '\u6280\u80fd',
+    'header.cron': '\u5b9a\u65f6\u4efb\u52a1',
+    'header.language': '\u5207\u6362\u8bed\u8a00',
+    'header.minimize': '\u6700\u5c0f\u5316',
+    'header.close': '\u5173\u95ed',
+    'state.welcome': '\u6b22\u8fce\u4f7f\u7528 {name}',
+    'state.idle': '\u70b9\u51fb\u6211\u5f00\u59cb\u5bf9\u8bdd',
+    'state.listening': '\u8046\u542c\u4e2d...',
+    'state.listeningHint': '\u8bf7\u8bf4\u8bdd...',
+    'state.thinking': '\u601d\u8003\u4e2d...',
+    'state.thinkingHint': '\u6b63\u5728\u5206\u6790\u4f60\u7684\u95ee\u9898',
+    'state.speaking': '\u56de\u590d\u4e2d...',
+    'state.speakingHint': '\u6b63\u5728\u4e3a\u4f60\u89e3\u7b54',
+    'state.followup': '\u7ee7\u7eed\u8bf4\u8bdd\uff0c\u6211\u5728\u542c...',
+    'state.followupHint': '\u53ef\u4ee5\u7ee7\u7eed\u63d0\u95ee',
+    'state.goodbye': '\u518d\u89c1',
+    'state.goodbyeHint': '\u671f\u5f85\u4e0b\u6b21\u89c1\u9762',
+    'chat.title': '\u804a\u5929\u8bb0\u5f55',
+    'chat.clear': '\u6e05\u7a7a',
+    'chat.empty': '\u6682\u65e0\u804a\u5929\u8bb0\u5f55\uff0c\u5f00\u59cb\u5bf9\u8bdd\u5427\u3002',
+    'chat.inputPlaceholder': '\u8f93\u5165\u6587\u5b57\u4e0e\u6211\u5bf9\u8bdd...',
+    'chat.send': '\u53d1\u9001',
+    'chat.upload': '\u4e0a\u4f20\u9644\u4ef6',
+    'chat.attach.selectedCount': '\u5df2\u9644\u52a0 {count} \u4e2a\u6587\u4ef6',
+    'chat.attach.more': '\u7b49 {count} \u4e2a',
+    'chat.attach.defaultPrompt': '\u8bf7\u5148\u9605\u8bfb\u4e0b\u9762\u6587\u4ef6\uff0c\u518d\u7ed9\u51fa\u5904\u7406\u7ed3\u679c\u3002',
+    'chat.attach.sectionTitle': '\u672c\u6b21\u5904\u7406\u6587\u4ef6\uff1a',
+    'character.title': '\u9009\u62e9\u89d2\u8272',
+    'voice.title': '\u9009\u62e9\u97f3\u8272',
+    'voice.addCustomTitle': '\u65b0\u589e\u81ea\u5b9a\u4e49\u97f3\u8272',
+    'voice.filter.all': '\u5168\u90e8',
+    'voice.filter.zh': '\u4e2d\u6587',
+    'voice.custom.id': 'Voice ID',
+    'voice.custom.idPlaceholder': '\u4f8b\u5982\uff1attv-voice-xxxx',
+    'voice.custom.name': '\u540d\u79f0',
+    'voice.custom.namePlaceholder': '\u663e\u793a\u540d\u79f0\uff08\u53ef\u9009\uff09',
+    'voice.custom.description': '\u63cf\u8ff0',
+    'voice.custom.descriptionPlaceholder': '\u63cf\u8ff0\uff08\u53ef\u9009\uff09',
+    'voice.custom.language': '\u8bed\u8a00',
+    'common.save': '\u4fdd\u5b58',
+    'common.cancel': '\u53d6\u6d88',
+    'common.reset': '\u6e05\u7a7a',
+    'skills.title': '\u6280\u80fd',
+    'skills.openDir': '\u6253\u5f00\u6280\u80fd\u76ee\u5f55',
+    'skills.refresh': '\u5237\u65b0\u6280\u80fd',
+    'skills.add.button': '\u6dfb\u52a0\u6280\u80fd',
+    'skills.add.placeholder': 'skill slug\uff0c\u4f8b\u5982 owner/my-skill',
+    'skills.add.hint': '\u901a\u8fc7 ClawHub slug \u5b89\u88c5\uff0c\u7b49\u4ef7\u4e8e `clawhub install <skill-slug>`\u3002',
+    'skills.add.invalidSlug': '\u8bf7\u8f93\u5165\u5408\u6cd5\u7684 Skill slug\uff08\u53ea\u5141\u8bb8\u5b57\u6bcd\u3001\u6570\u5b57\u3001\u70b9\u3001\u4e0b\u5212\u7ebf\u3001\u659c\u6760\u3001\u8fde\u5b57\u7b26\uff09\u3002',
+    'skills.add.installing': '\u6b63\u5728\u5b89\u88c5 Skill...',
+    'skills.meta.workspace': 'workspace',
+    'skills.meta.managed': 'managed',
+    'skills.empty': '\u6682\u65e0\u6280\u80fd',
+    'skills.badge.eligible': '\u53ef\u7528',
+    'skills.badge.blocked': '\u53d7\u9650',
+    'skills.badge.disabled': '\u5df2\u7981\u7528',
+    'skills.badge.allowlistBlocked': 'allowlist \u9650\u5236',
+    'skills.missing': '\u7f3a\u5931',
+    'skills.btn.enable': '\u542f\u7528',
+    'skills.btn.disable': '\u7981\u7528',
+    'skills.btn.saveKey': '\u4fdd\u5b58 Key',
+    'skills.error.apiUnavailable': 'skills API \u4e0d\u53ef\u7528',
+    'cron.title': '\u5b9a\u65f6\u4efb\u52a1',
+    'cron.refresh': '\u5237\u65b0\u4efb\u52a1',
+    'cron.form.name': '\u540d\u79f0',
+    'cron.form.namePlaceholder': '\u4f8b\u5982\uff1a\u65e9\u62a5',
+    'cron.form.description': '\u63cf\u8ff0\uff08\u53ef\u9009\uff09',
+    'cron.form.descriptionPlaceholder': '\u4f8b\u5982\uff1a\u6bcf\u5929 8 \u70b9\u53d1\u9001\u603b\u7ed3',
+    'cron.form.expr': 'Cron \u8868\u8fbe\u5f0f',
+    'cron.form.exprPlaceholder': '\u4f8b\u5982\uff1a0 8 * * *',
+    'cron.form.tz': '\u65f6\u533a\uff08\u53ef\u9009\uff09',
+    'cron.form.tzPlaceholder': '\u4f8b\u5982\uff1aAmerica/Los_Angeles',
+    'cron.form.message': '\u4efb\u52a1\u5185\u5bb9',
+    'cron.form.messagePlaceholder': '\u4f8b\u5982\uff1a\u603b\u7ed3\u6628\u665a\u5230\u73b0\u5728\u7684\u91cd\u8981\u6d88\u606f',
+    'cron.form.delivery': '\u63a8\u9001\u901a\u9053\uff08\u53ef\u9009\uff09',
+    'cron.form.deliveryNone': '\u4e0d\u6307\u5b9a',
+    'cron.form.toPlaceholder': 'to \u76ee\u6807\uff08\u53ef\u9009\uff09',
+    'cron.form.create': '\u521b\u5efa\u4efb\u52a1',
+    'cron.empty': '\u6682\u65e0\u5b9a\u65f6\u4efb\u52a1',
+    'cron.error.apiUnavailable': 'cron API \u4e0d\u53ef\u7528',
+    'cron.error.nameRequired': '\u4efb\u52a1\u540d\u79f0\u5fc5\u586b\u3002',
+    'cron.error.exprRequired': 'Cron \u8868\u8fbe\u5f0f\u5fc5\u586b\u3002',
+    'cron.error.messageRequired': '\u4efb\u52a1\u5185\u5bb9\u5fc5\u586b\u3002',
+    'cron.btn.enable': '\u542f\u7528',
+    'cron.btn.disable': '\u7981\u7528',
+    'cron.btn.runNow': '\u7acb\u5373\u6267\u884c',
+    'cron.btn.delete': '\u5220\u9664',
+    'cron.badge.enabled': '\u5df2\u542f\u7528',
+    'cron.badge.disabled': '\u5df2\u7981\u7528',
+    'cron.badge.last': '\u6700\u8fd1',
+    'cron.label.scheduleUnknown': '\u8c03\u5ea6\uff1a\u672a\u77e5',
+    'cron.label.unnamed': '\uff08\u672a\u547d\u540d\uff09',
+    'cron.label.description': '\u63cf\u8ff0',
+    'cron.label.message': '\u5185\u5bb9',
+    'cron.label.nextRun': '\u4e0b\u6b21\u8fd0\u884c',
+    'cron.label.lastRun': '\u4e0a\u6b21\u8fd0\u884c',
+    'cron.label.error': '\u9519\u8bef',
+    'cron.confirm.delete': '\u5220\u9664\u5b9a\u65f6\u4efb\u52a1\u201c{name}\u201d\uff1f'
+  },
+  en: {
+    'app.windowTitle': 'Claw K',
+    'app.brand': 'Claw K',
+    'header.expand': 'Expand',
+    'header.character': 'Switch Character',
+    'header.voice': 'Switch Voice',
+    'header.skills': 'Skills',
+    'header.cron': 'Scheduled Tasks',
+    'header.language': 'Switch Language',
+    'header.minimize': 'Minimize',
+    'header.close': 'Close',
+    'state.welcome': 'Welcome to {name}',
+    'state.idle': 'Tap me to start chatting',
+    'state.listening': 'Listening...',
+    'state.listeningHint': 'Please speak...',
+    'state.thinking': 'Thinking...',
+    'state.thinkingHint': 'Analyzing your question',
+    'state.speaking': 'Responding...',
+    'state.speakingHint': 'Preparing your answer',
+    'state.followup': 'Keep talking, I am listening...',
+    'state.followupHint': 'You can continue asking',
+    'state.goodbye': 'Goodbye',
+    'state.goodbyeHint': 'See you next time',
+    'chat.title': 'Chat History',
+    'chat.clear': 'Clear',
+    'chat.empty': 'No chat history yet. Start a conversation.',
+    'chat.inputPlaceholder': 'Type a message...',
+    'chat.send': 'Send',
+    'chat.upload': 'Attach files',
+    'chat.attach.selectedCount': '{count} file(s) attached',
+    'chat.attach.more': 'and {count} more',
+    'chat.attach.defaultPrompt': 'Please read the files below and then provide the result.',
+    'chat.attach.sectionTitle': 'Files to process:',
+    'character.title': 'Choose Character',
+    'voice.title': 'Choose Voice',
+    'voice.addCustomTitle': 'Add Custom Voice',
+    'voice.filter.all': 'All',
+    'voice.filter.zh': 'Chinese',
+    'voice.custom.id': 'Voice ID',
+    'voice.custom.idPlaceholder': 'e.g. ttv-voice-xxxx',
+    'voice.custom.name': 'Name',
+    'voice.custom.namePlaceholder': 'Display name (optional)',
+    'voice.custom.description': 'Description',
+    'voice.custom.descriptionPlaceholder': 'Description (optional)',
+    'voice.custom.language': 'Language',
+    'common.save': 'Save',
+    'common.cancel': 'Cancel',
+    'common.reset': 'Reset',
+    'skills.title': 'Skills',
+    'skills.openDir': 'Open managed skills directory',
+    'skills.refresh': 'Refresh skills',
+    'skills.add.button': 'Add Skill',
+    'skills.add.placeholder': 'skill slug, e.g. owner/my-skill',
+    'skills.add.hint': 'Install by ClawHub slug (equivalent to `clawhub install <skill-slug>`).',
+    'skills.add.invalidSlug': 'Please enter a valid skill slug (letters, numbers, dot, underscore, slash, hyphen).',
+    'skills.add.installing': 'Installing skill...',
+    'skills.meta.workspace': 'workspace',
+    'skills.meta.managed': 'managed',
+    'skills.empty': 'No skills available.',
+    'skills.badge.eligible': 'eligible',
+    'skills.badge.blocked': 'blocked',
+    'skills.badge.disabled': 'disabled',
+    'skills.badge.allowlistBlocked': 'allowlist blocked',
+    'skills.missing': 'Missing',
+    'skills.btn.enable': 'Enable',
+    'skills.btn.disable': 'Disable',
+    'skills.btn.saveKey': 'Save key',
+    'skills.error.apiUnavailable': 'skills API unavailable',
+    'cron.title': 'Scheduled Tasks',
+    'cron.refresh': 'Refresh tasks',
+    'cron.form.name': 'Name',
+    'cron.form.namePlaceholder': 'e.g. Morning Brief',
+    'cron.form.description': 'Description (optional)',
+    'cron.form.descriptionPlaceholder': 'e.g. Send summary at 8:00 every day',
+    'cron.form.expr': 'Cron Expression',
+    'cron.form.exprPlaceholder': 'e.g. 0 8 * * *',
+    'cron.form.tz': 'Timezone (optional)',
+    'cron.form.tzPlaceholder': 'e.g. America/Los_Angeles',
+    'cron.form.message': 'Task Message',
+    'cron.form.messagePlaceholder': 'e.g. Summarize the important updates since last night',
+    'cron.form.delivery': 'Delivery Channel (optional)',
+    'cron.form.deliveryNone': 'None',
+    'cron.form.toPlaceholder': 'target (optional)',
+    'cron.form.create': 'Create Task',
+    'cron.empty': 'No cron jobs yet.',
+    'cron.error.apiUnavailable': 'cron API unavailable',
+    'cron.error.nameRequired': 'Cron name is required.',
+    'cron.error.exprRequired': 'Cron expression is required.',
+    'cron.error.messageRequired': 'Task message is required.',
+    'cron.btn.enable': 'Enable',
+    'cron.btn.disable': 'Disable',
+    'cron.btn.runNow': 'Run now',
+    'cron.btn.delete': 'Delete',
+    'cron.badge.enabled': 'enabled',
+    'cron.badge.disabled': 'disabled',
+    'cron.badge.last': 'last',
+    'cron.label.scheduleUnknown': 'schedule: unknown',
+    'cron.label.unnamed': '(unnamed)',
+    'cron.label.description': 'Description',
+    'cron.label.message': 'Message',
+    'cron.label.nextRun': 'Next run',
+    'cron.label.lastRun': 'Last run',
+    'cron.label.error': 'Error',
+    'cron.confirm.delete': 'Delete cron job "{name}"?'
+  }
+};
+const DEFAULT_LANGUAGE = 'zh';
+const SUPPORTED_LANGUAGES = ['zh', 'en'];
+let currentLanguage = resolveLanguage(localStorage.getItem(UI_LANGUAGE_STORAGE_KEY));
+
+function normalizeLanguageKey(value) {
+  return String(value || '').trim().toLowerCase().replace(/_/g, '-');
+}
+
+function resolveLanguage(value) {
+  const normalized = normalizeLanguageKey(value);
+  if (!normalized) return DEFAULT_LANGUAGE;
+  if (LANGUAGE_REGISTRY[normalized]) return normalized;
+
+  if (normalized.startsWith('zh') && LANGUAGE_REGISTRY.zh) return 'zh';
+  if (normalized.startsWith('en') && LANGUAGE_REGISTRY.en) return 'en';
+
+  const primary = normalized.split('-')[0];
+  if (LANGUAGE_REGISTRY[primary]) return primary;
+
+  return DEFAULT_LANGUAGE;
+}
+
+function registerLanguage(language, dictionary) {
+  const key = normalizeLanguageKey(language);
+  if (!key || !dictionary || typeof dictionary !== 'object') return;
+
+  LANGUAGE_REGISTRY[key] = {
+    ...(LANGUAGE_REGISTRY[key] || {}),
+    ...dictionary
+  };
+  if (!SUPPORTED_LANGUAGES.includes(key)) {
+    SUPPORTED_LANGUAGES.push(key);
+  }
+}
+
+function getLanguageBadgeLabel(language) {
+  const key = normalizeLanguageKey(language);
+  if (!key) return 'EN';
+  if (key === 'zh' || key.startsWith('zh-')) return '\u4e2d';
+  return key.slice(0, 2).toUpperCase();
+}
+
+function t(key, params = {}) {
+  const langDict = LANGUAGE_REGISTRY[currentLanguage] || {};
+  const fallbackDict = LANGUAGE_REGISTRY.en || {};
+  const template = langDict[key] ?? fallbackDict[key] ?? key;
+  return String(template).replace(/\{(\w+)\}/g, (_, token) => String(params[token] ?? ''));
+}
+
+function setLanguage(language) {
+  currentLanguage = resolveLanguage(language);
+  try {
+    localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, currentLanguage);
+  } catch (error) {}
+  applyI18n();
+}
+
+function toggleLanguage() {
+  const currentIndex = SUPPORTED_LANGUAGES.indexOf(currentLanguage);
+  const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % SUPPORTED_LANGUAGES.length : 0;
+  setLanguage(SUPPORTED_LANGUAGES[nextIndex]);
+}
+
+window.ClawKI18n = {
+  registerLanguage,
+  setLanguage,
+  getLanguage: () => currentLanguage,
+  t
+};
+
+function applyI18n() {
+  const html = document.documentElement;
+  if (html) {
+    html.lang = currentLanguage === 'zh' ? 'zh-CN' : currentLanguage;
+  }
+  document.title = t('app.windowTitle');
+
+  const languageLabel = document.getElementById('language-label');
+  if (languageLabel) {
+    languageLabel.textContent = getLanguageBadgeLabel(currentLanguage);
+  }
+
+  document.querySelectorAll('[data-i18n]').forEach((element) => {
+    const key = element.getAttribute('data-i18n');
+    if (!key) return;
+    element.textContent = t(key);
+  });
+
+  document.querySelectorAll('[data-i18n-title]').forEach((element) => {
+    const key = element.getAttribute('data-i18n-title');
+    if (!key) return;
+    element.setAttribute('title', t(key));
+  });
+
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((element) => {
+    const key = element.getAttribute('data-i18n-placeholder');
+    if (!key) return;
+    element.setAttribute('placeholder', t(key));
+  });
+
+  refreshStateTextByLanguage();
+
+  if (chatHistory.length === 0) {
+    renderChatHistory();
+  }
+
+  renderSkillsPanelMeta();
+  renderSkillsList();
+  renderCronList();
+  renderAttachmentSummary();
+}
+
+function refreshStateTextByLanguage() {
+  if (!stateText || !statusHint) return;
+
+  switch (appState) {
+    case 'welcome':
+      stateText.textContent = t('state.welcome', { name: currentCharacter.name });
+      statusHint.textContent = '';
+      break;
+    case 'idle':
+      stateText.textContent = t('state.idle');
+      statusHint.textContent = '';
+      break;
+    case 'listening':
+      stateText.textContent = t('state.listening');
+      statusHint.textContent = t('state.listeningHint');
+      break;
+    case 'thinking':
+      stateText.textContent = t('state.thinking');
+      statusHint.textContent = t('state.thinkingHint');
+      break;
+    case 'speaking':
+      stateText.textContent = t('state.speaking');
+      statusHint.textContent = t('state.speakingHint');
+      break;
+    case 'followup':
+      stateText.textContent = t('state.followup');
+      statusHint.textContent = t('state.followupHint');
+      break;
+    case 'goodbye':
+      stateText.textContent = t('state.goodbye');
+      statusHint.textContent = t('state.goodbyeHint');
+      break;
+    default:
+      stateText.textContent = t('state.idle');
+      statusHint.textContent = '';
+      break;
+  }
+}
+
+// ===== 鍒濆鍖栧厜鐜姩鐢?=====
 document.addEventListener('DOMContentLoaded', () => {
   if (!ENABLE_AVATAR_HEAD_BUBBLE) {
     if (avatarPanel) {
@@ -315,19 +656,20 @@ document.addEventListener('DOMContentLoaded', () => {
   initVoice();
   initTaskListeners();
   initMiniMode();
-  initStreamingTTS();  // 初始化流式 TTS 监听
+  initStreamingTTS();  // 鍒濆鍖栨祦寮?TTS 鐩戝惉
   initFilePathClickHandler();
-  initChatHistory();  // 初始化文件路径点击处理
+  initChatHistory();  // 鍒濆鍖栨枃浠惰矾寰勭偣鍑诲鐞?
+  applyI18n();
 
-  // 首次启动播放欢迎视频
+  // 棣栨鍚姩鎾斁娆㈣繋瑙嗛
   if (isFirstLaunch) {
     playWelcomeVideo();
   }
 
-  console.log('[龙虾助手] 已初始化');
+  console.log('[榫欒櫨鍔╂墜] 宸插垵濮嬪寲');
 });
 
-// ===== 初始化任务监听器 =====
+// ===== 鍒濆鍖栦换鍔＄洃鍚櫒 =====
 function initTaskListeners() {
   window.electronAPI.task.onCompleted((data) => {
     console.log('[OpenClaw Assistant] Task completed:', data.taskId);
@@ -370,12 +712,12 @@ function setAppState(newState) {
   appState = newState;
   clearTimeout(followupTimer);
 
-  // 更新龙虾动画class
+  // 鏇存柊榫欒櫨鍔ㄧ敾class
   lobsterChar.className = 'lobster-character';
   stateDot.className = 'state-dot';
   statusHint.className = 'status-hint';
 
-  // 控制点击引导和脉冲环
+  // 鎺у埗鐐瑰嚮寮曞鍜岃剦鍐茬幆
   if (newState === 'idle') {
     tapHint.classList.remove('hidden');
   } else {
@@ -389,51 +731,51 @@ function setAppState(newState) {
     }
   }
 
-  // 切换视频源
+  // 鍒囨崲瑙嗛婧?
   switchVideo(newState);
 
   switch (newState) {
     case 'welcome':
       tapHint.classList.add('hidden');
-      stateText.textContent = `欢迎使用${currentCharacter.name}`;
+      stateText.textContent = t('state.welcome', { name: currentCharacter.name });
       statusHint.textContent = '';
       break;
     case 'idle':
-      stateText.textContent = '点击我开始对话';
+      stateText.textContent = t('state.idle');
       statusHint.textContent = '';
       break;
     case 'listening':
       lobsterChar.classList.add('listening');
       stateDot.classList.add('listening');
       statusHint.classList.add('listening');
-      stateText.textContent = '聆听中...';
-      statusHint.textContent = '请说话...';
+      stateText.textContent = t('state.listening');
+      statusHint.textContent = t('state.listeningHint');
       break;
     case 'thinking':
       lobsterChar.classList.add('thinking');
       stateDot.classList.add('thinking');
       statusHint.classList.add('thinking');
-      stateText.textContent = '思考中...';
-      statusHint.textContent = '🤔 正在分析您的问题';
+      stateText.textContent = t('state.thinking');
+      statusHint.textContent = t('state.thinkingHint');
       showBubble('<div class="thinking-dots"><span></span><span></span><span></span></div>', false);
       break;
     case 'speaking':
       lobsterChar.classList.add('speaking');
       stateDot.classList.add('speaking');
       statusHint.classList.add('speaking');
-      stateText.textContent = '回复中...';
-      statusHint.textContent = '💬 正在为您解答';
+      stateText.textContent = t('state.speaking');
+      statusHint.textContent = t('state.speakingHint');
       break;
     case 'followup':
-      // TTS播完后等待用户继续说话
+      // TTS鎾畬鍚庣瓑寰呯敤鎴风户缁璇?
       lobsterChar.classList.add('listening');
       stateDot.classList.add('listening');
       statusHint.classList.add('listening');
-      stateText.textContent = '继续说话，我在听...';
-      statusHint.textContent = '💬 可以继续提问';
-      // 超时回到idle
+      stateText.textContent = t('state.followup');
+      statusHint.textContent = t('state.followupHint');
+      // 瓒呮椂鍥炲埌idle
       followupTimer = setTimeout(() => {
-        console.log('[龙虾助手] 追问超时，回到待机');
+        console.log('[Claw K] Follow-up timeout, returning to idle');
         stopRecording().then(() => {
           setAppState('idle');
           hideBubble(2000);
@@ -441,27 +783,27 @@ function setAppState(newState) {
       }, FOLLOWUP_TIMEOUT);
       break;
     case 'goodbye':
-      stateText.textContent = '再见！';
-      statusHint.textContent = '👋 期待下次见面';
+      stateText.textContent = t('state.goodbye');
+      statusHint.textContent = t('state.goodbyeHint');
       break;
   }
 
-  // 同步光环动画状态
+  // 鍚屾鍏夌幆鍔ㄧ敾鐘舵€?
   if (auraAnimator) {
     const orbState = newState === 'followup' ? 'listening' : newState;
     auraAnimator.setState(orbState);
   }
 
-  // 同步悬浮球状态
+  // 鍚屾鎮诞鐞冪姸鎬?
   if (isMiniMode) {
     setMiniOrbState(newState);
   }
 }
 
-// 需要播放视频自带音频的状态
+// 闇€瑕佹挱鏀捐棰戣嚜甯﹂煶棰戠殑鐘舵€?
 const VIDEO_WITH_AUDIO = ['welcome', 'thinking'];
 
-// ===== 视频切换功能 =====
+// ===== 瑙嗛鍒囨崲鍔熻兘 =====
 function switchVideo(state) {
   const videoSource = VIDEO_SOURCES[state] || VIDEO_SOURCES.idle;
   const videoElement = document.getElementById('lobster-char');
@@ -471,32 +813,32 @@ function switchVideo(state) {
     const currentSrc = sourceElement ? sourceElement.src : '';
     const newSrc = videoSource;
 
-    // 只在视频源不同时才切换
+    // 鍙湪瑙嗛婧愪笉鍚屾椂鎵嶅垏鎹?
     if (!currentSrc.endsWith(newSrc)) {
-      console.log(`[视频切换] ${state} -> ${videoSource}`);
+      console.log(`[瑙嗛鍒囨崲] ${state} -> ${videoSource}`);
 
-      // 添加过渡动画
+      // 娣诲姞杩囨浮鍔ㄧ敾
       videoElement.classList.add('video-transition');
       setTimeout(() => videoElement.classList.remove('video-transition'), 400);
 
-      // 保存当前播放状态
+      // 淇濆瓨褰撳墠鎾斁鐘舵€?
       const wasPlaying = !videoElement.paused;
 
-      // 更新视频源
+      // 鏇存柊瑙嗛婧?
       if (sourceElement) {
         sourceElement.src = newSrc;
       }
 
-      // 根据状态决定是否启用视频音频
+      // 鏍规嵁鐘舵€佸喅瀹氭槸鍚﹀惎鐢ㄨ棰戦煶棰?
       const useVideoAudio = VIDEO_WITH_AUDIO.includes(state);
       videoElement.muted = !useVideoAudio;
 
-      // 重新加载并播放
+      // 閲嶆柊鍔犺浇骞舵挱鏀?
       videoElement.load();
       if (wasPlaying || useVideoAudio) {
         videoElement.play().catch(err => {
-          console.warn('[视频播放] 自动播放失败:', err);
-          // 如果有声播放失败，降级为静音播放
+          console.warn('[瑙嗛鎾斁] 鑷姩鎾斁澶辫触:', err);
+          // 濡傛灉鏈夊０鎾斁澶辫触锛岄檷绾т负闈欓煶鎾斁
           if (useVideoAudio) {
             videoElement.muted = true;
             videoElement.play().catch(() => {});
@@ -504,61 +846,61 @@ function switchVideo(state) {
         });
       }
     } else {
-      // 视频源相同，但可能需要更新音频状态
+      // 瑙嗛婧愮浉鍚岋紝浣嗗彲鑳介渶瑕佹洿鏂伴煶棰戠姸鎬?
       const useVideoAudio = VIDEO_WITH_AUDIO.includes(state);
       videoElement.muted = !useVideoAudio;
     }
   }
 }
 
-// ===== 播放欢迎视频 =====
+// ===== 鎾斁娆㈣繋瑙嗛 =====
 function playWelcomeVideo() {
-  console.log('[龙虾助手] 播放欢迎视频');
+  console.log('[榫欒櫨鍔╂墜] 鎾斁娆㈣繋瑙嗛');
   setAppState('welcome');
 
   const videoElement = document.getElementById('lobster-char');
   if (videoElement && videoElement.tagName === 'VIDEO') {
-    // 移除 loop 属性，让欢迎视频只播放一次
+    // 绉婚櫎 loop 灞炴€э紝璁╂杩庤棰戝彧鎾斁涓€娆?
     videoElement.loop = false;
-    // 使用视频自带音频（取消静音）
+    // 浣跨敤瑙嗛鑷甫闊抽锛堝彇娑堥潤闊筹級
     videoElement.muted = false;
 
-    // 监听视频播放结束
+    // 鐩戝惉瑙嗛鎾斁缁撴潫
     videoElement.onended = () => {
-      console.log('[龙虾助手] 欢迎视频播放完毕，切换到待机状态');
-      videoElement.loop = true; // 恢复循环播放
-      videoElement.muted = true; // 恢复静音（其他状态视频不需要声音）
-      videoElement.onended = null; // 移除事件监听
+      console.log('[Claw K] Welcome video ended, switching to idle');
+      videoElement.loop = true; // 鎭㈠寰幆鎾斁
+      videoElement.muted = true; // 鎭㈠闈欓煶锛堝叾浠栫姸鎬佽棰戜笉闇€瑕佸０闊筹級
+      videoElement.onended = null; // 绉婚櫎浜嬩欢鐩戝惉
       isFirstLaunch = false;
       setAppState('idle');
     };
 
-    // 确保视频播放（先尝试有声播放，失败则静音播放+TTS兜底）
+    // 纭繚瑙嗛鎾斁锛堝厛灏濊瘯鏈夊０鎾斁锛屽け璐ュ垯闈欓煶鎾斁+TTS鍏滃簳锛?
     videoElement.play().catch(err => {
-      console.warn('[视频播放] 欢迎视频有声播放失败，尝试静音播放+TTS兜底:', err);
+      console.warn('[瑙嗛鎾斁] 娆㈣繋瑙嗛鏈夊０鎾斁澶辫触锛屽皾璇曢潤闊虫挱鏀?TTS鍏滃簳:', err);
       videoElement.muted = true;
       videoElement.play().catch(err2 => {
-        console.warn('[视频播放] 欢迎视频自动播放完全失败:', err2);
+        console.warn('[瑙嗛鎾斁] 娆㈣繋瑙嗛鑷姩鎾斁瀹屽叏澶辫触:', err2);
         videoElement.loop = true;
         isFirstLaunch = false;
         setAppState('idle');
       });
-      // 静音播放成功时，用TTS兜底欢迎语音
+      // 闈欓煶鎾斁鎴愬姛鏃讹紝鐢═TS鍏滃簳娆㈣繋璇煶
       playWelcomeAudioFallback();
     });
   }
 }
 
-// ===== 播放欢迎语音（兜底：视频无法有声播放时使用TTS） =====
+// ===== 鎾斁娆㈣繋璇煶锛堝厹搴曪細瑙嗛鏃犳硶鏈夊０鎾斁鏃朵娇鐢═TS锛?=====
 async function playWelcomeAudioFallback() {
   try {
     await playTextToSpeech(currentCharacter.welcomeText);
   } catch (error) {
-    console.warn('[龙虾助手] 欢迎语音TTS兜底播放失败:', error);
+    console.warn('[榫欒櫨鍔╂墜] 娆㈣繋璇煶TTS鍏滃簳鎾斁澶辫触:', error);
   }
 }
 
-// ===== 气泡显示 =====
+// ===== 姘旀场鏄剧ず =====
 function showBubble(content, isUserSpeech = false) {
   if (!ENABLE_AVATAR_HEAD_BUBBLE || !speechBubble || !bubbleText) return;
 
@@ -570,17 +912,17 @@ function showBubble(content, isUserSpeech = false) {
     bubbleText.innerHTML = content;
   } else {
     speechBubble.className = 'speech-bubble ai-response';
-    // 检测文件路径并转换为可点击链接
+    // 妫€娴嬫枃浠惰矾寰勫苟杞崲涓哄彲鐐瑰嚮閾炬帴
     bubbleText.innerHTML = linkifyFilePaths(content);
   }
 
-  // 自动隐藏
+  // 鑷姩闅愯棌
   bubbleHideTimer = setTimeout(() => {
     hideBubble();
   }, BUBBLE_AUTO_HIDE);
 }
 
-// 打字机效果显示 AI 回复
+// 鎵撳瓧鏈烘晥鏋滄樉绀?AI 鍥炲
 function showBubbleWithTyping(content) {
   if (!ENABLE_AVATAR_HEAD_BUBBLE || !speechBubble || !bubbleText) return;
 
@@ -590,7 +932,7 @@ function showBubbleWithTyping(content) {
   bubbleText.innerHTML = '';
 
   let index = 0;
-  const typingSpeed = 30; // 每个字符的延迟（毫秒）
+  const typingSpeed = 30; // 姣忎釜瀛楃鐨勫欢杩燂紙姣锛?
 
   function typeNextChar() {
     if (index < content.length) {
@@ -598,9 +940,9 @@ function showBubbleWithTyping(content) {
       index++;
       setTimeout(typeNextChar, typingSpeed);
     } else {
-      // 打字完成后追加查看全文按钮
+      // 鎵撳瓧瀹屾垚鍚庤拷鍔犳煡鐪嬪叏鏂囨寜閽?
       appendViewTextBtn(content);
-      // 自动隐藏
+      // 鑷姩闅愯棌
       bubbleHideTimer = setTimeout(() => {
         hideBubble();
       }, BUBBLE_AUTO_HIDE);
@@ -610,7 +952,7 @@ function showBubbleWithTyping(content) {
   typeNextChar();
 }
 
-// 带查看文本按钮的气泡（用于打断后展示）
+// 甯︽煡鐪嬫枃鏈寜閽殑姘旀场锛堢敤浜庢墦鏂悗灞曠ず锛?
 function showBubbleWithViewBtn(fullText, isInterrupted = false) {
   if (!ENABLE_AVATAR_HEAD_BUBBLE || !speechBubble || !bubbleText) return;
 
@@ -619,23 +961,23 @@ function showBubbleWithViewBtn(fullText, isInterrupted = false) {
   speechBubble.className = 'speech-bubble ai-response';
 
   const preview = fullText.length > 40 ? fullText.substring(0, 40) + '...' : fullText;
-  const label = isInterrupted ? '已打断，点击查看完整回复' : '点击查看完整回复';
+  const label = isInterrupted ? '宸叉墦鏂紝鐐瑰嚮鏌ョ湅瀹屾暣鍥炲' : '鐐瑰嚮鏌ョ湅瀹屾暣鍥炲';
 
   bubbleText.innerHTML = `<span class="bubble-preview">${escapeHtml(preview)}</span>`;
   appendViewTextBtn(fullText, label);
 
   bubbleHideTimer = setTimeout(() => {
     hideBubble();
-  }, BUBBLE_AUTO_HIDE * 2); // 打断后给更长的展示时间
+  }, BUBBLE_AUTO_HIDE * 2); // 鎵撴柇鍚庣粰鏇撮暱鐨勫睍绀烘椂闂?
 }
 
-// 追加"查看全文"按钮到气泡底部
+// 杩藉姞"鏌ョ湅鍏ㄦ枃"鎸夐挳鍒版皵娉″簳閮?
 function appendViewTextBtn(fullText, label) {
-  if (!fullText || fullText.length < 20) return; // 短文本不需要按钮
+  if (!fullText || fullText.length < 20) return; // 鐭枃鏈笉闇€瑕佹寜閽?
 
   const btnWrap = document.createElement('div');
   btnWrap.className = 'view-text-btn-wrap';
-  btnWrap.innerHTML = `<button class="view-text-btn">${label || '查看完整文本'}</button>`;
+  btnWrap.innerHTML = `<button class="view-text-btn">${label || '鏌ョ湅瀹屾暣鏂囨湰'}</button>`;
   bubbleText.appendChild(btnWrap);
 
   btnWrap.querySelector('.view-text-btn').addEventListener('click', (e) => {
@@ -644,9 +986,9 @@ function appendViewTextBtn(fullText, label) {
   });
 }
 
-// 全文查看浮层
+// 鍏ㄦ枃鏌ョ湅娴眰
 function openTextViewer(text) {
-  // 移除已有的浮层
+  // 绉婚櫎宸叉湁鐨勬诞灞?
   const existing = document.getElementById('text-viewer');
   if (existing) existing.remove();
 
@@ -655,8 +997,8 @@ function openTextViewer(text) {
   viewer.className = 'text-viewer';
   viewer.innerHTML = `
     <div class="text-viewer-header">
-      <span class="text-viewer-title">完整回复</span>
-      <button class="text-viewer-close" id="text-viewer-close">×</button>
+      <span class="text-viewer-title">${escapeHtml(t('chat.title'))}</span>
+      <button class="text-viewer-close" id="text-viewer-close">脳</button>
     </div>
     <div class="text-viewer-body">${escapeHtml(text)}</div>
   `;
@@ -701,7 +1043,7 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// 清理 markdown 格式符号（**加粗**、*斜体*、~~删除线~~ 等）
+// 娓呯悊 markdown 鏍煎紡绗﹀彿锛?*鍔犵矖**銆?鏂滀綋*銆亊~鍒犻櫎绾縹~ 绛夛級
 function initChatHistory() {
   if (!chatHistoryEl) return;
 
@@ -771,7 +1113,7 @@ function renderChatHistory() {
   if (!chatHistoryEl) return;
 
   if (!chatHistory.length) {
-    chatHistoryEl.innerHTML = '<div class="chat-empty" id="chat-empty">No chat history yet. Start a conversation.</div>';
+    chatHistoryEl.innerHTML = `<div class="chat-empty" id="chat-empty">${escapeHtml(t('chat.empty'))}</div>`;
     return;
   }
 
@@ -821,51 +1163,51 @@ function addChatMessage(role, text, options = {}) {
 function cleanMarkdown(text) {
   if (!text) return text;
   return text
-    .replace(/\*\*(.+?)\*\*/g, '$1')  // **加粗**
-    .replace(/\*(.+?)\*/g, '$1')      // *斜体*
-    .replace(/~~(.+?)~~/g, '$1')      // ~~删除线~~
-    .replace(/`(.+?)`/g, '$1');       // `代码`
+    .replace(/\*\*(.+?)\*\*/g, '$1')  // **鍔犵矖**
+    .replace(/\*(.+?)\*/g, '$1')      // *鏂滀綋*
+    .replace(/~~(.+?)~~/g, '$1')      // ~~鍒犻櫎绾縹~
+    .replace(/`(.+?)`/g, '$1');       // `浠ｇ爜`
 }
 
-// 检测文本中的文件路径并转换为可点击链接
+// 妫€娴嬫枃鏈腑鐨勬枃浠惰矾寰勫苟杞崲涓哄彲鐐瑰嚮閾炬帴
 function linkifyFilePaths(text) {
   if (!text) return text;
 
-  // 文件路径正则表达式（更宽松的匹配）
-  // 匹配: ~/xxx, /Users/xxx, /home/xxx 等
-  // 支持中文、空格、各种特殊字符
+  // 鏂囦欢璺緞姝ｅ垯琛ㄨ揪寮忥紙鏇村鏉剧殑鍖归厤锛?
+  // 鍖归厤: ~/xxx, /Users/xxx, /home/xxx 绛?
+  // 鏀寔涓枃銆佺┖鏍笺€佸悇绉嶇壒娈婂瓧绗?
   const filePathRegex = /(~\/[^\s`'"<>|]+|\/(?:Users|home|System|Applications|Library|tmp|var|etc)[^\s`'"<>|]*)/g;
 
   return text.replace(filePathRegex, (match) => {
-    // 清理末尾的标点符号
-    let cleanPath = match.replace(/[。，,；;！!？?）)\]]+$/g, '');
+    // 娓呯悊鏈熬鐨勬爣鐐圭鍙?
+    let cleanPath = match.replace(/[銆傦紝,锛?锛?锛?锛?\]]+$/g, '');
 
-    // 创建可点击的链接
-    return `<span class="file-path" data-path="${escapeHtml(cleanPath)}" title="点击在 Finder 中显示">${escapeHtml(cleanPath)}</span>`;
+    // 鍒涘缓鍙偣鍑荤殑閾炬帴
+    return `<span class="file-path" data-path="${escapeHtml(cleanPath)}" title="鐐瑰嚮鍦?Finder 涓樉绀?>${escapeHtml(cleanPath)}</span>`;
   });
 }
 
-// 打断当前任务（查询或播放）
+// 鎵撴柇褰撳墠浠诲姟锛堟煡璇㈡垨鎾斁锛?
 function interruptCurrentTask() {
-  console.log('[龙虾助手] 打断当前任务');
+  console.log('[榫欒櫨鍔╂墜] 鎵撴柇褰撳墠浠诲姟');
 
-  // 设置中断标志
+  // 璁剧疆涓柇鏍囧織
   isProcessing = false;
 
-  // 中断 TTS
+  // 涓柇 TTS
   interruptTTS();
 
-  // 清空音频队列
+  // 娓呯┖闊抽闃熷垪
   audioQueue = [];
   isPlayingQueue = false;
   streamingTextBuffer = '';
 
-  // 重置状态
+  // 閲嶇疆鐘舵€?
   setAppState('idle');
-  showBubble('已打断');
+  showBubble('\u5df2\u6253\u65ad');
 }
 
-// 初始化文件路径点击事件监听
+// 鍒濆鍖栨枃浠惰矾寰勭偣鍑讳簨浠剁洃鍚?
 function initFilePathClickHandler() {
   document.addEventListener('click', async (e) => {
     const pathElement = e.target.closest('.file-path');
@@ -873,27 +1215,27 @@ function initFilePathClickHandler() {
       e.stopPropagation();
       const filePath = pathElement.dataset.path;
 
-      console.log('[File] 点击文件路径:', filePath);
+      console.log('[File] 鐐瑰嚮鏂囦欢璺緞:', filePath);
 
       try {
         const result = await window.electronAPI.file.showInFolder(filePath);
         if (result.success) {
-          // 显示成功反馈
+          // 鏄剧ず鎴愬姛鍙嶉
           pathElement.classList.add('clicked');
           setTimeout(() => pathElement.classList.remove('clicked'), 500);
         } else {
-          console.warn('[File] 打开失败:', result.error);
-          // 显示错误提示
-          showBubble(`无法打开路径: ${result.error}`);
+          console.warn('[File] 鎵撳紑澶辫触:', result.error);
+          // 鏄剧ず閿欒鎻愮ず
+          showBubble(`鏃犳硶鎵撳紑璺緞: ${result.error}`);
         }
       } catch (err) {
-        console.error('[File] 调用失败:', err);
+        console.error('[File] 璋冪敤澶辫触:', err);
       }
     }
   });
 }
 
-// 初始化文件路径点击事件监听
+// 鍒濆鍖栨枃浠惰矾寰勭偣鍑讳簨浠剁洃鍚?
 function initFilePathClickHandler() {
   document.addEventListener('click', async (e) => {
     const pathElement = e.target.closest('.file-path');
@@ -901,56 +1243,57 @@ function initFilePathClickHandler() {
       e.stopPropagation();
       const filePath = pathElement.dataset.path;
 
-      console.log('[File] 点击文件路径:', filePath);
+      console.log('[File] 鐐瑰嚮鏂囦欢璺緞:', filePath);
 
       try {
         const result = await window.electronAPI.file.showInFolder(filePath);
         if (result.success) {
-          // 显示成功反馈
+          // 鏄剧ず鎴愬姛鍙嶉
           pathElement.classList.add('clicked');
           setTimeout(() => pathElement.classList.remove('clicked'), 500);
         } else {
-          console.warn('[File] 打开失败:', result.error);
-          // 显示错误提示
-          showBubble(`无法打开路径: ${result.error}`);
+          console.warn('[File] 鎵撳紑澶辫触:', result.error);
+          // 鏄剧ず閿欒鎻愮ず
+          showBubble(`鏃犳硶鎵撳紑璺緞: ${result.error}`);
         }
       } catch (err) {
-        console.error('[File] 调用失败:', err);
+        console.error('[File] 璋冪敤澶辫触:', err);
       }
     }
   });
 }
 
-// ===== Deepgram 事件监听 =====
+// ===== Deepgram 浜嬩欢鐩戝惉 =====
 function initDeepgramListeners() {
   window.electronAPI.deepgram.removeAllListeners();
 
   window.electronAPI.deepgram.onConnected(() => {
-    console.log('[龙虾助手] Deepgram 已连接');
+    console.log('[Claw K] Deepgram connected');
   });
 
   window.electronAPI.deepgram.onTranscript((data) => {
     const { transcript, isFinal } = data;
-    console.log(`[龙虾助手] 识别 [${isFinal ? '最终' : '临时'}]: "${transcript}"`);
+    const transcriptType = isFinal ? 'final' : 'partial';
+    console.log(`[Claw K] Transcript [${transcriptType}]: "${transcript}"`);
 
     if (isFinal) {
       if (transcript.trim().length > 0) {
-        // 累积识别结果
+        // 绱Н璇嗗埆缁撴灉
         if (accumulatedTranscript.length > 0) {
           accumulatedTranscript += ' ' + transcript.trim();
         } else {
           accumulatedTranscript = transcript.trim();
         }
 
-        // 显示累积的用户语音
-        showBubble('🎤 ' + escapeHtml(accumulatedTranscript), true);
+        // 鏄剧ず绱Н鐨勭敤鎴疯闊?
+        showBubble('馃帳 ' + escapeHtml(accumulatedTranscript), true);
 
-        // 清除之前的执行定时器
+        // 娓呴櫎涔嬪墠鐨勬墽琛屽畾鏃跺櫒
         clearTimeout(executeTimer);
 
-        // 延迟执行：等待用户停顿后执行命令（utterance_end 事件可提前触发）
+        // 寤惰繜鎵ц锛氱瓑寰呯敤鎴峰仠椤垮悗鎵ц鍛戒护锛坲tterance_end 浜嬩欢鍙彁鍓嶈Е鍙戯級
         executeTimer = setTimeout(() => {
-          console.log('[龙虾助手] 用户停顿超时，执行命令');
+          console.log('[Claw K] Speech pause timeout, executing command');
           clearInterval(countdownInterval);
           const commandToExecute = accumulatedTranscript;
           accumulatedTranscript = '';
@@ -960,35 +1303,35 @@ function initDeepgramListeners() {
           });
         }, EXECUTE_DELAY);
 
-        // 倒计时显示
+        // 鍊掕鏃舵樉绀?
         let countdown = Math.ceil(EXECUTE_DELAY / 1000);
         clearInterval(countdownInterval);
-        statusHint.textContent = `${countdown}秒后执行...  继续说话可重置`;
+        statusHint.textContent = `${countdown}\u79d2\u540e\u6267\u884c... \u7ee7\u7eed\u8bf4\u8bdd\u53ef\u91cd\u7f6e`;
         countdownInterval = setInterval(() => {
           countdown--;
           if (countdown > 0) {
-            statusHint.textContent = `${countdown}秒后执行...  继续说话可重置`;
+            statusHint.textContent = `${countdown}\u79d2\u540e\u6267\u884c... \u7ee7\u7eed\u8bf4\u8bdd\u53ef\u91cd\u7f6e`;
           } else {
             clearInterval(countdownInterval);
           }
         }, 1000);
       }
     } else {
-      // 实时显示识别中的文字
+      // 瀹炴椂鏄剧ず璇嗗埆涓殑鏂囧瓧
       if (transcript.trim().length > 0) {
         statusHint.textContent = transcript + '...';
       }
     }
   });
 
-  // 监听语音结束事件（Deepgram 检测到用户停止说话）
+  // 鐩戝惉璇煶缁撴潫浜嬩欢锛圖eepgram 妫€娴嬪埌鐢ㄦ埛鍋滄璇磋瘽锛?
   window.electronAPI.deepgram.onUtteranceEnd(() => {
-    console.log('[龙虾助手] 检测到语音结束');
+    console.log('[榫欒櫨鍔╂墜] 妫€娴嬪埌璇煶缁撴潫');
     if (accumulatedTranscript.trim().length > 0) {
-      // 用户有有效语音且已停止说话，立即执行
+      // 鐢ㄦ埛鏈夋湁鏁堣闊充笖宸插仠姝㈣璇濓紝绔嬪嵆鎵ц
       clearTimeout(executeTimer);
       clearInterval(countdownInterval);
-      console.log('[龙虾助手] 语音结束，立即执行命令');
+      console.log('[Claw K] Utterance ended, executing command now');
       const commandToExecute = accumulatedTranscript;
       accumulatedTranscript = '';
       stopRecording().then(() => {
@@ -998,25 +1341,25 @@ function initDeepgramListeners() {
   });
 
   window.electronAPI.deepgram.onError((error) => {
-    console.error('[龙虾助手] Deepgram 错误:', error);
+    console.error('[榫欒櫨鍔╂墜] Deepgram 閿欒:', error);
     stopRecording();
     setAppState('idle');
-    showBubble('识别出错了，再点我试试吧');
+    showBubble('璇嗗埆鍑洪敊浜嗭紝鍐嶇偣鎴戣瘯璇曞惂');
   });
 
   window.electronAPI.deepgram.onClosed(() => {
-    console.log('[龙虾助手] Deepgram 连接关闭');
+    console.log('[榫欒櫨鍔╂墜] Deepgram 杩炴帴鍏抽棴');
   });
 }
 
-// ===== 中断 TTS =====
-// 流式 TTS 音频队列
+// ===== 涓柇 TTS =====
+// 娴佸紡 TTS 闊抽闃熷垪
 let audioQueue = [];
 let isPlayingQueue = false;
 let streamingTextBuffer = '';
 
 function interruptTTS() {
-  // 停止当前播放
+  // 鍋滄褰撳墠鎾斁
   if (audioPlayer) {
     try {
       audioPlayer.onended = null;
@@ -1024,20 +1367,20 @@ function interruptTTS() {
     } catch (e) { /* ignore */ }
     audioPlayer = null;
   }
-  // 清空队列
+  // 娓呯┖闃熷垪
   audioQueue = [];
   isPlayingQueue = false;
   streamingTextBuffer = '';
   isSpeaking = false;
-  // 通知主进程停止 TTS 生成
+  // 閫氱煡涓昏繘绋嬪仠姝?TTS 鐢熸垚
   window.electronAPI.tts.stop();
 }
 
-// ===== 流式 TTS 初始化 =====
+// ===== 娴佸紡 TTS 鍒濆鍖?=====
 function initStreamingTTS() {
-  // 监听音频块
+  // 鐩戝惉闊抽鍧?
   window.electronAPI.deepgram.onAudioChunk(async (data) => {
-    console.log(`[TTS] 收到音频块 #${data.sentenceId}`);
+    console.log(`[TTS] 鏀跺埌闊抽鍧?#${data.sentenceId}`);
 
     audioQueue.push(data);
 
@@ -1046,18 +1389,18 @@ function initStreamingTTS() {
     }
   });
 
-  // 监听首个句子（切换状态，但不提前显示文本）
+  // 鐩戝惉棣栦釜鍙ュ瓙锛堝垏鎹㈢姸鎬侊紝浣嗕笉鎻愬墠鏄剧ず鏂囨湰锛?
   window.electronAPI.deepgram.onFirstSentence((data) => {
-    console.log('[TTS] 首句到达，准备播放');
-    // 切换到 speaking 状态
+    console.log('[TTS] First sentence received, preparing playback');
+    // 鍒囨崲鍒?speaking 鐘舵€?
     if (appState === 'thinking') {
       setAppState('speaking');
     }
-    // 不提前显示文本，等音频播放时再显示
+    // 涓嶆彁鍓嶆樉绀烘枃鏈紝绛夐煶棰戞挱鏀炬椂鍐嶆樉绀?
   });
 }
 
-// 处理音频队列
+// 澶勭悊闊抽闃熷垪
 async function processAudioQueue() {
   if (isPlayingQueue || audioQueue.length === 0) return;
 
@@ -1066,14 +1409,14 @@ async function processAudioQueue() {
   while (audioQueue.length > 0) {
     const item = audioQueue.shift();
 
-    // 播放音频（音频开始播放时才显示文本）
+    // 鎾斁闊抽锛堥煶棰戝紑濮嬫挱鏀炬椂鎵嶆樉绀烘枃鏈級
     await playAudioChunk(item.audio, item.text);
   }
 
   isPlayingQueue = false;
   isSpeaking = false;
 
-  // TTS 播放完毕，进入追问模式
+  // TTS 鎾斁瀹屾瘯锛岃繘鍏ヨ拷闂ā寮?
   if (appState === 'speaking') {
     isProcessing = false;
     setAppState('followup');
@@ -1081,15 +1424,15 @@ async function processAudioQueue() {
   }
 }
 
-// 播放单个音频块（音频开始播放时才显示对应文本）
+// 鎾斁鍗曚釜闊抽鍧楋紙闊抽寮€濮嬫挱鏀炬椂鎵嶆樉绀哄搴旀枃鏈級
 function playAudioChunk(audioBase64, text) {
   return new Promise((resolve) => {
     const audioDataUrl = 'data:audio/mp3;base64,' + audioBase64;
     const audio = new Audio(audioDataUrl);
 
-    // 音频开始播放时才显示文本
+    // 闊抽寮€濮嬫挱鏀炬椂鎵嶆樉绀烘枃鏈?
     audio.onplay = () => {
-      // 追加文本到缓冲区并更新显示
+      // 杩藉姞鏂囨湰鍒扮紦鍐插尯骞舵洿鏂版樉绀?
       if (streamingTextBuffer && !streamingTextBuffer.includes(text)) {
         streamingTextBuffer += text;
       } else {
@@ -1112,7 +1455,7 @@ function playAudioChunk(audioBase64, text) {
   });
 }
 
-// ===== 录音控制 =====
+// ===== 褰曢煶鎺у埗 =====
 async function startRecording() {
   if (isRecording || isProcessing) return;
 
@@ -1130,7 +1473,7 @@ async function startRecording() {
 
     const result = await window.electronAPI.deepgram.startListening();
     if (!result.success) {
-      showBubble('语音识别启动失败，请检查配置');
+      showBubble('\u8bed\u97f3\u8bc6\u522b\u542f\u52a8\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u914d\u7f6e');
       setAppState('idle');
       audioStream.getTracks().forEach(track => track.stop());
       audioStream = null;
@@ -1156,14 +1499,14 @@ async function startRecording() {
     isRecording = true;
 
   } catch (error) {
-    console.error('[龙虾助手] 录音失败:', error);
+    console.error('[榫欒櫨鍔╂墜] 褰曢煶澶辫触:', error);
     setAppState('idle');
     if (error.name === 'NotAllowedError') {
-      showBubble('请允许访问麦克风后再点我');
+      showBubble('璇峰厑璁歌闂害鍏嬮鍚庡啀鐐规垜');
     } else if (error.name === 'NotFoundError') {
-      showBubble('没检测到麦克风哦');
+      showBubble('娌℃娴嬪埌楹﹀厠椋庡摝');
     } else {
-      showBubble('录音启动失败: ' + error.message);
+      showBubble('褰曢煶鍚姩澶辫触: ' + error.message);
     }
   }
 }
@@ -1173,7 +1516,7 @@ async function stopRecording() {
 
   isRecording = false;
 
-  // 清除执行定时器和倒计时
+  // 娓呴櫎鎵ц瀹氭椂鍣ㄥ拰鍊掕鏃?
   clearTimeout(executeTimer);
   clearInterval(countdownInterval);
   executeTimer = null;
@@ -1197,25 +1540,25 @@ async function stopRecording() {
   await window.electronAPI.deepgram.stopListening();
 }
 
-// ===== 点击龙虾 → 开始聆听 =====
+// ===== 鐐瑰嚮榫欒櫨 鈫?寮€濮嬭亞鍚?=====
 async function onLobsterClick() {
-  // speaking 状态下允许打断 → 直接进入聆听（无需再次点击）
+  // speaking 鐘舵€佷笅鍏佽鎵撴柇 鈫?鐩存帴杩涘叆鑱嗗惉锛堟棤闇€鍐嶆鐐瑰嚮锛?
   if (appState === 'speaking') {
     interruptTTS();
     isProcessing = false;
     if (lastAIResponse) {
       showBubbleWithViewBtn(lastAIResponse, true);
     }
-    // 打断后直接开始聆听
+    // 鎵撴柇鍚庣洿鎺ュ紑濮嬭亞鍚?
     accumulatedTranscript = '';
     setAppState('listening');
     await startRecording();
     return;
   }
 
-  // thinking 状态下允许打断 → 停止当前任务
+  // thinking 鐘舵€佷笅鍏佽鎵撴柇 鈫?鍋滄褰撳墠浠诲姟
   if (appState === 'thinking') {
-    console.log('[龙虾助手] 打断查询任务');
+    console.log('[榫欒櫨鍔╂墜] 鎵撴柇鏌ヨ浠诲姟');
     interruptCurrentTask();
     return;
   }
@@ -1223,7 +1566,7 @@ async function onLobsterClick() {
   if (isProcessing) return;
 
   if (appState === 'listening' || appState === 'followup') {
-    // 再次点击 → 停止聆听
+    // 鍐嶆鐐瑰嚮 鈫?鍋滄鑱嗗惉
     clearTimeout(executeTimer);
     accumulatedTranscript = '';
     await stopRecording();
@@ -1231,20 +1574,20 @@ async function onLobsterClick() {
     return;
   }
 
-  // 清空之前的累积文本
+  // 娓呯┖涔嬪墠鐨勭疮绉枃鏈?
   accumulatedTranscript = '';
 
-  // 激活动画
+  // 婵€娲诲姩鐢?
   lobsterChar.classList.add('active');
   setTimeout(() => lobsterChar.classList.remove('active'), 600);
 
-  // 开始聆听
+  // 寮€濮嬭亞鍚?
   hideBubble();
   setAppState('listening');
   await startRecording();
 }
 
-// ===== 处理命令 =====
+// ===== 澶勭悊鍛戒护 =====
 async function handleCommand(command) {
   const normalizedCommand = (command || '').trim();
   if (!normalizedCommand || isProcessing) return;
@@ -1312,47 +1655,38 @@ async function handleSyncTask(command, isGoodbye) {
 
   setAppState('thinking');
 
-  // 如果当前角色有 preQueryPrompts，先播放提示语再执行查询
-  if (currentCharacter.preQueryPrompts && currentCharacter.preQueryPrompts.length > 0) {
-    const prePrompt = currentCharacter.preQueryPrompts[Math.floor(Math.random() * currentCharacter.preQueryPrompts.length)];
-    showBubble(prePrompt);
-    // 播放提示语（非流式 TTS）
-    await playTextToSpeech(prePrompt);
-  } else {
-    // 其他角色显示思考提示
-    const prompts = getThinkingPrompts();
-    const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
-    showBubble(randomPrompt);
-  }
+  const prompts = getThinkingPrompts();
+  const randomPrompt = prompts[Math.floor(Math.random() * prompts.length)];
+  showBubble(randomPrompt);
 
-  // 重置流式 TTS 状态
+  // 閲嶇疆娴佸紡 TTS 鐘舵€?
   streamingTextBuffer = '';
   audioQueue = [];
   isPlayingQueue = false;
-  isSpeaking = true;  // 标记正在播放
+  isSpeaking = true;  // 鏍囪姝ｅ湪鎾斁
 
   try {
     const result = await window.electronAPI.executeCommand(command);
 
-    // 清理 markdown 符号
+    // 娓呯悊 markdown 绗﹀彿
     const cleanedMessage = cleanMarkdown(result.message);
 
-    // 缓存 AI 回复（用于打断后查看）
+    // 缂撳瓨 AI 鍥炲锛堢敤浜庢墦鏂悗鏌ョ湅锛?
     lastAIResponse = cleanedMessage;
     addChatMessage('assistant', cleanedMessage, { name: currentCharacter.name });
 
-    // 流式 TTS 已经在后台播放（由 initStreamingTTS 监听事件驱动）
-    // 如果没有收到音频块（例如 Clawdbot 返回空），使用传统 TTS 作为备选
+    // 娴佸紡 TTS 宸茬粡鍦ㄥ悗鍙版挱鏀撅紙鐢?initStreamingTTS 鐩戝惉浜嬩欢椹卞姩锛?
+    // 濡傛灉娌℃湁鏀跺埌闊抽鍧楋紙渚嬪 Clawdbot 杩斿洖绌猴級锛屼娇鐢ㄤ紶缁?TTS 浣滀负澶囬€?
     if (audioQueue.length === 0 && !isPlayingQueue) {
-      // 没有收到流式音频，使用传统 TTS
+      // 娌℃湁鏀跺埌娴佸紡闊抽锛屼娇鐢ㄤ紶缁?TTS
       setAppState('speaking');
       showBubbleWithViewBtn(cleanedMessage);
       await playTextToSpeech(cleanedMessage);
 
-      // TTS 播放完后，再显示文字
+      // TTS 鎾斁瀹屽悗锛屽啀鏄剧ず鏂囧瓧
       showBubbleWithTyping(escapeHtml(cleanedMessage));
 
-      // 如果是告别语，播放告别动画
+      // 濡傛灉鏄憡鍒锛屾挱鏀惧憡鍒姩鐢?
       if (isGoodbye) {
         setAppState('goodbye');
         isProcessing = false;
@@ -1360,13 +1694,13 @@ async function handleSyncTask(command, isGoodbye) {
           setAppState('idle');
         }, 3000);
       } else {
-        // 进入追问模式
+        // 杩涘叆杩介棶妯″紡
         isProcessing = false;
         setAppState('followup');
         await startRecording();
       }
     }
-    // 如果是告别语，特殊处理
+    // 濡傛灉鏄憡鍒锛岀壒娈婂鐞?
     if (isGoodbye) {
       setAppState('goodbye');
       isProcessing = false;
@@ -1374,7 +1708,7 @@ async function handleSyncTask(command, isGoodbye) {
         setAppState('idle');
       }, 3000);
     }
-    // 否则流式 TTS 会在 processAudioQueue 中自动进入 followup 模式
+    // 鍚﹀垯娴佸紡 TTS 浼氬湪 processAudioQueue 涓嚜鍔ㄨ繘鍏?followup 妯″紡
 
   } catch (error) {
     console.error('[OpenClaw Assistant] Command handling failed:', error);
@@ -1389,7 +1723,7 @@ async function handleSyncTask(command, isGoodbye) {
 
 
 
-// ===== TTS 播放 =====
+// ===== TTS 鎾斁 =====
 async function playTextToSpeech(text) {
   if (isSpeaking) interruptTTS();
 
@@ -1398,7 +1732,7 @@ async function playTextToSpeech(text) {
     const result = await window.electronAPI.deepgram.textToSpeech(text);
 
     if (!result.success) {
-      console.warn('[龙虾助手] TTS 失败:', result.error);
+      console.warn('[榫欒櫨鍔╂墜] TTS 澶辫触:', result.error);
       isSpeaking = false;
       return;
     }
@@ -1420,27 +1754,27 @@ async function playTextToSpeech(text) {
       };
 
       audioPlayer.onerror = (e) => {
-        console.error('[龙虾助手] TTS 播放错误:', e);
+        console.error('[榫欒櫨鍔╂墜] TTS 鎾斁閿欒:', e);
         isSpeaking = false;
         audioPlayer = null;
         resolve();
       };
 
       audioPlayer.play().catch((err) => {
-        console.error('[龙虾助手] TTS play() 失败:', err);
+        console.error('[榫欒櫨鍔╂墜] TTS play() 澶辫触:', err);
         isSpeaking = false;
         audioPlayer = null;
         resolve();
       });
     });
   } catch (error) {
-    console.error('[龙虾助手] TTS 失败:', error);
+    console.error('[榫欒櫨鍔╂墜] TTS 澶辫触:', error);
     isSpeaking = false;
     audioPlayer = null;
   }
 }
 
-// ===== 音色选择 =====
+// ===== 闊宠壊閫夋嫨 =====
 const voicePanel = document.getElementById('voice-panel');
 const voiceList = document.getElementById('voice-list');
 const voiceSelectBtn = document.getElementById('voice-select-btn');
@@ -1456,53 +1790,53 @@ const customVoiceSaveBtn = document.getElementById('custom-voice-save-btn');
 const customVoiceCancelBtn = document.getElementById('custom-voice-cancel-btn');
 const CUSTOM_VOICE_STORAGE_KEY = 'openclaw_custom_voices_v1';
 
-// MiniMax 系统音色列表（中文 + 英文）
+// MiniMax 绯荤粺闊宠壊鍒楄〃锛堜腑鏂?+ 鑻辨枃锛?
 const VOICE_OPTIONS = [
-  // ===== 推荐 =====
-  { group: '推荐', lang: 'all', voices: [
-    { id: 'Lovely_Girl',         icon: 'mdi:ribbon', name: '可爱女孩',     desc: '甜美可爱', gender: 'female' },
-    { id: 'Lively_Girl',         icon: 'mdi:star-four-points', name: '活泼女孩',     desc: '元气满满', gender: 'female' },
-    { id: 'Decent_Boy',          icon: 'mdi:account', name: '阳光男孩',     desc: '清爽干净', gender: 'male' },
-    { id: 'Friendly_Person',     icon: 'mdi:emoticon-happy', name: '友善人士',     desc: '亲切自然', gender: 'female' },
+  // ===== 鎺ㄨ崘 =====
+  { group: '鎺ㄨ崘', lang: 'all', voices: [
+    { id: 'Lovely_Girl',         icon: 'mdi:ribbon', name: '鍙埍濂冲',     desc: '鐢滅編鍙埍', gender: 'female' },
+    { id: 'Lively_Girl',         icon: 'mdi:star-four-points', name: '娲绘臣濂冲',     desc: '鍏冩皵婊℃弧', gender: 'female' },
+    { id: 'Decent_Boy',          icon: 'mdi:account', name: '闃冲厜鐢峰',     desc: '娓呯埥骞插噣', gender: 'male' },
+    { id: 'Friendly_Person',     icon: 'mdi:emoticon-happy', name: '鍙嬪杽浜哄＋',     desc: '浜插垏鑷劧', gender: 'female' },
   ]},
-  // ===== 中文女声 =====
-  { group: '中文女声', lang: 'zh', voices: [
-    { id: 'Chinese (Mandarin)_Cute_Spirit',       icon: 'mdi:face-woman-shimmer', name: '可爱精灵',   desc: '灵动可爱', gender: 'female' },
-    { id: 'Chinese (Mandarin)_Warm_Girl',         icon: 'mdi:flower', name: '温暖女孩',   desc: '温柔治愈', gender: 'female' },
-    { id: 'Chinese (Mandarin)_Soft_Girl',         icon: 'mdi:cloud', name: '软萌女孩',   desc: '软绵绵', gender: 'female' },
-    { id: 'Chinese (Mandarin)_Crisp_Girl',        icon: 'mdi:bell', name: '清脆女孩',   desc: '清亮脆嫩', gender: 'female' },
-    { id: 'Chinese (Mandarin)_BashfulGirl',       icon: 'mdi:emoticon-blush', name: '害羞女孩',   desc: '含蓄害羞', gender: 'female' },
-    { id: 'Chinese (Mandarin)_Warm_Bestie',       icon: 'mdi:heart', name: '暖心闺蜜',   desc: '亲切温暖', gender: 'female' },
-    { id: 'Chinese (Mandarin)_IntellectualGirl',  icon: 'mdi:book-open-page-variant', name: '知性女孩',   desc: '知性优雅', gender: 'female' },
-    { id: 'Chinese (Mandarin)_Sweet_Lady',        icon: 'mdi:flower-rose', name: '甜美女士',   desc: '成熟甜美', gender: 'female' },
-    { id: 'Chinese (Mandarin)_Mature_Woman',      icon: 'mdi:account-tie', name: '成熟女性',   desc: '沉稳大气', gender: 'female' },
-    { id: 'Chinese (Mandarin)_News_Anchor',       icon: 'mdi:television', name: '新闻主播',   desc: '标准播音', gender: 'female' },
-    { id: 'Arrogant_Miss',                        icon: 'mdi:crown', name: '傲娇小姐',   desc: '高冷傲娇', gender: 'female' },
-    { id: 'Sweet_Girl_2',                         icon: 'mdi:candy', name: '甜甜女孩',   desc: '甜蜜温柔', gender: 'female' },
-    { id: 'Exuberant_Girl',                       icon: 'mdi:party-popper', name: '热情女孩',   desc: '活力四射', gender: 'female' },
-    { id: 'Inspirational_girl',                   icon: 'mdi:sparkles', name: '元气少女',   desc: '正能量', gender: 'female' },
-    { id: 'Calm_Woman',                           icon: 'mdi:yoga', name: '平静女性',   desc: '沉稳安详', gender: 'female' },
-    { id: 'Wise_Woman',                           icon: 'mdi:book', name: '智慧女性',   desc: '专业成熟', gender: 'female' },
-    { id: 'Imposing_Manner',                      icon: 'mdi:chess-queen', name: '气场女王',   desc: '霸气十足', gender: 'female' },
+  // ===== 涓枃濂冲０ =====
+  { group: '涓枃濂冲０', lang: 'zh', voices: [
+    { id: 'Chinese (Mandarin)_Cute_Spirit',       icon: 'mdi:face-woman-shimmer', name: '鍙埍绮剧伒',   desc: '鐏靛姩鍙埍', gender: 'female' },
+    { id: 'Chinese (Mandarin)_Warm_Girl',         icon: 'mdi:flower', name: '娓╂殩濂冲',   desc: '娓╂煍娌绘剤', gender: 'female' },
+    { id: 'Chinese (Mandarin)_Soft_Girl',         icon: 'mdi:cloud', name: 'Soft Girl',   desc: 'Soft and delicate', gender: 'female' },
+    { id: 'Chinese (Mandarin)_Crisp_Girl',        icon: 'mdi:bell', name: '娓呰剢濂冲',   desc: '娓呬寒鑴嗗', gender: 'female' },
+    { id: 'Chinese (Mandarin)_BashfulGirl',       icon: 'mdi:emoticon-blush', name: '瀹崇緸濂冲',   desc: '鍚搫瀹崇緸', gender: 'female' },
+    { id: 'Chinese (Mandarin)_Warm_Bestie',       icon: 'mdi:heart', name: '鏆栧績闂鸿湝',   desc: '浜插垏娓╂殩', gender: 'female' },
+    { id: 'Chinese (Mandarin)_IntellectualGirl',  icon: 'mdi:book-open-page-variant', name: 'Intellectual Girl',   desc: 'Intellectual and elegant', gender: 'female' },
+    { id: 'Chinese (Mandarin)_Sweet_Lady',        icon: 'mdi:flower-rose', name: '鐢滅編濂冲＋',   desc: '鎴愮啛鐢滅編', gender: 'female' },
+    { id: 'Chinese (Mandarin)_Mature_Woman',      icon: 'mdi:account-tie', name: 'Mature Woman',   desc: 'Calm and steady', gender: 'female' },
+    { id: 'Chinese (Mandarin)_News_Anchor',       icon: 'mdi:television', name: '鏂伴椈涓绘挱',   desc: '鏍囧噯鎾煶', gender: 'female' },
+    { id: 'Arrogant_Miss',                        icon: 'mdi:crown', name: '鍌插▏灏忓',   desc: '楂樺喎鍌插▏', gender: 'female' },
+    { id: 'Sweet_Girl_2',                         icon: 'mdi:candy', name: '鐢滅敎濂冲',   desc: '鐢滆湝娓╂煍', gender: 'female' },
+    { id: 'Exuberant_Girl',                       icon: 'mdi:party-popper', name: '鐑儏濂冲',   desc: '娲诲姏鍥涘皠', gender: 'female' },
+    { id: 'Inspirational_girl',                   icon: 'mdi:sparkles', name: 'Inspirational Girl',   desc: 'Positive energy', gender: 'female' },
+    { id: 'Calm_Woman',                           icon: 'mdi:yoga', name: 'Calm Woman',   desc: 'Calm and soothing', gender: 'female' },
+    { id: 'Wise_Woman',                           icon: 'mdi:book', name: 'Wise Woman',   desc: 'Mature and professional', gender: 'female' },
+    { id: 'Imposing_Manner',                      icon: 'mdi:chess-queen', name: '姘斿満濂崇帇',   desc: '闇告皵鍗佽冻', gender: 'female' },
   ]},
-  // ===== 中文男声 =====
-  { group: '中文男声', lang: 'zh', voices: [
-    { id: 'Chinese (Mandarin)_Gentle_Youth',       icon: 'mdi:weather-night', name: '温柔少年',   desc: '温柔细腻', gender: 'male' },
-    { id: 'Chinese (Mandarin)_Straightforward_Boy',icon: 'mdi:arm-flex', name: '直爽男孩',   desc: '直率干脆', gender: 'male' },
-    { id: 'Chinese (Mandarin)_Pure-hearted_Boy',   icon: 'mdi:heart-outline', name: '纯真男孩',   desc: '纯净清澈', gender: 'male' },
-    { id: 'Chinese (Mandarin)_Gentleman',          icon: 'mdi:hat-fedora', name: '绅士',       desc: '儒雅有礼', gender: 'male' },
-    { id: 'Chinese (Mandarin)_Male_Announcer',     icon: 'mdi:microphone', name: '男播音员',   desc: '浑厚播音', gender: 'male' },
-    { id: 'Chinese (Mandarin)_Radio_Host',         icon: 'mdi:radio', name: '电台主持',   desc: '深夜电台', gender: 'male' },
-    { id: 'Chinese (Mandarin)_Reliable_Executive', icon: 'mdi:tie', name: '靠谱高管',   desc: '稳重专业', gender: 'male' },
-    { id: 'Young_Knight',                          icon: 'mdi:sword-cross', name: '少年骑士',   desc: '少年感', gender: 'male' },
-    { id: 'Casual_Guy',                            icon: 'mdi:sunglasses', name: '随性男生',   desc: '轻松随意', gender: 'male' },
-    { id: 'Patient_Man',                           icon: 'mdi:tree', name: '耐心男士',   desc: '温和耐心', gender: 'male' },
-    { id: 'Deep_Voice_Man',                        icon: 'mdi:microphone-variant', name: '低沉男声',   desc: '浑厚有力', gender: 'male' },
-    { id: 'Determined_Man',                        icon: 'mdi:target', name: '坚毅男士',   desc: '果断坚定', gender: 'male' },
-    { id: 'Elegant_Man',                           icon: 'mdi:glass-wine', name: '优雅男士',   desc: '儒雅精致', gender: 'male' },
-    { id: 'Robot_Armor',                           icon: 'mdi:robot', name: '机甲战士',   desc: '机器人', gender: 'male' },
+  // ===== 涓枃鐢峰０ =====
+  { group: '涓枃鐢峰０', lang: 'zh', voices: [
+    { id: 'Chinese (Mandarin)_Gentle_Youth',       icon: 'mdi:weather-night', name: '娓╂煍灏戝勾',   desc: '娓╂煍缁嗚吇', gender: 'male' },
+    { id: 'Chinese (Mandarin)_Straightforward_Boy',icon: 'mdi:arm-flex', name: '鐩寸埥鐢峰',   desc: '鐩寸巼骞茶剢', gender: 'male' },
+    { id: 'Chinese (Mandarin)_Pure-hearted_Boy',   icon: 'mdi:heart-outline', name: '绾湡鐢峰',   desc: '绾噣娓呮緢', gender: 'male' },
+    { id: 'Chinese (Mandarin)_Gentleman',          icon: 'mdi:hat-fedora', name: '缁呭＋',       desc: '鍎掗泤鏈夌ぜ', gender: 'male' },
+    { id: 'Chinese (Mandarin)_Male_Announcer',     icon: 'mdi:microphone', name: '鐢锋挱闊冲憳',   desc: '娴戝帤鎾煶', gender: 'male' },
+    { id: 'Chinese (Mandarin)_Radio_Host',         icon: 'mdi:radio', name: '鐢靛彴涓绘寔',   desc: '娣卞鐢靛彴', gender: 'male' },
+    { id: 'Chinese (Mandarin)_Reliable_Executive', icon: 'mdi:tie', name: '闈犺氨楂樼',   desc: '绋抽噸涓撲笟', gender: 'male' },
+    { id: 'Young_Knight',                          icon: 'mdi:sword-cross', name: 'Young Knight',   desc: 'Youthful spirit', gender: 'male' },
+    { id: 'Casual_Guy',                            icon: 'mdi:sunglasses', name: 'Casual Guy',   desc: 'Relaxed style', gender: 'male' },
+    { id: 'Patient_Man',                           icon: 'mdi:tree', name: '鑰愬績鐢峰＋',   desc: '娓╁拰鑰愬績', gender: 'male' },
+    { id: 'Deep_Voice_Man',                        icon: 'mdi:microphone-variant', name: '浣庢矇鐢峰０',   desc: '娴戝帤鏈夊姏', gender: 'male' },
+    { id: 'Determined_Man',                        icon: 'mdi:target', name: '鍧氭瘏鐢峰＋',   desc: '鏋滄柇鍧氬畾', gender: 'male' },
+    { id: 'Elegant_Man',                           icon: 'mdi:glass-wine', name: '浼橀泤鐢峰＋',   desc: '鍎掗泤绮捐嚧', gender: 'male' },
+    { id: 'Robot_Armor',                           icon: 'mdi:robot', name: 'Robot Armor',   desc: 'Robotic style', gender: 'male' },
   ]},
-  // ===== 英文女声 =====
+  // ===== 鑻辨枃濂冲０ =====
   { group: 'English Female', lang: 'en', voices: [
     { id: 'English_expressive_narrator',    icon: 'mdi:book-open', name: 'Narrator',       desc: 'Expressive storyteller', gender: 'female' },
     { id: 'English_radiant_girl',           icon: 'mdi:star-four-points', name: 'Radiant Girl',   desc: 'Bright and cheerful', gender: 'female' },
@@ -1513,7 +1847,7 @@ const VOICE_OPTIONS = [
     { id: 'English_lively_girl',            icon: 'mdi:party-popper', name: 'Lively Girl',    desc: 'Energetic vibe', gender: 'female' },
     { id: 'English_confident_woman',        icon: 'mdi:account-tie', name: 'Confident Woman',desc: 'Strong presence', gender: 'female' },
   ]},
-  // ===== 英文男声 =====
+  // ===== 鑻辨枃鐢峰０ =====
   { group: 'English Male', lang: 'en', voices: [
     { id: 'English_magnetic_male',          icon: 'mdi:microphone', name: 'Magnetic Male',  desc: 'Deep and rich', gender: 'male' },
     { id: 'English_calm_man',               icon: 'mdi:yoga', name: 'Calm Man',       desc: 'Soothing voice', gender: 'male' },
@@ -1804,7 +2138,7 @@ function renderVoiceList() {
 
 function setFilter(filter) {
   currentFilter = filter;
-  // 更新筛选按钮状态
+  // 鏇存柊绛涢€夋寜閽姸鎬?
   document.querySelectorAll('.filter-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.filter === filter);
   });
@@ -1815,10 +2149,10 @@ async function previewVoice(voiceId, voiceName) {
   if (previewingVoice === voiceId) return;
 
   previewingVoice = voiceId;
-  const previewText = voiceId.startsWith('English') ? 'Hello! Nice to meet you.' : '你好，很高兴认识你！';
+  const previewText = voiceId.startsWith('English') ? 'Hello! Nice to meet you.' : '浣犲ソ锛屽緢楂樺叴璁よ瘑浣狅紒';
 
   try {
-    // 临时设置音色
+    // 涓存椂璁剧疆闊宠壊
     await window.electronAPI.tts.setVoice(voiceId);
     const result = await window.electronAPI.deepgram.textToSpeech(previewText);
 
@@ -1829,10 +2163,10 @@ async function previewVoice(voiceId, voiceName) {
       await audio.play();
     }
 
-    // 恢复原音色
+    // 鎭㈠鍘熼煶鑹?
     await window.electronAPI.tts.setVoice(currentSelectedVoice);
   } catch (e) {
-    console.error('[龙虾助手] 试听失败:', e);
+    console.error('[榫欒櫨鍔╂墜] 璇曞惉澶辫触:', e);
     previewingVoice = null;
     await window.electronAPI.tts.setVoice(currentSelectedVoice);
   }
@@ -1854,6 +2188,7 @@ async function selectVoice(voiceId) {
 }
 
 function openVoicePanel() {
+  hideOverlayPanels('voice');
   currentFilter = 'all';
   document.querySelectorAll('.filter-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.filter === 'all');
@@ -1862,13 +2197,13 @@ function openVoicePanel() {
   toggleCustomVoiceForm(false);
   voicePanel.style.display = 'flex';
 
-  // 绑定筛选按钮事件
+  // 缁戝畾绛涢€夋寜閽簨浠?
   document.querySelectorAll('.filter-btn').forEach(btn => {
     btn.onclick = () => setFilter(btn.dataset.filter);
   });
 }
 
-// 初始化时获取当前音色
+// 鍒濆鍖栨椂鑾峰彇褰撳墠闊宠壊
 async function initVoice() {
   const savedVoiceId = loadSelectedVoice();
   let targetVoiceId = savedVoiceId;
@@ -1902,7 +2237,7 @@ async function initVoice() {
   } catch (e) {}
 }
 
-// ===== 角色切换 =====
+// ===== 瑙掕壊鍒囨崲 =====
 const characterPanel = document.getElementById('character-panel');
 const characterList = document.getElementById('character-list');
 const characterSelectBtn = document.getElementById('character-select-btn');
@@ -1911,8 +2246,8 @@ const closeCharacterPanel = document.getElementById('close-character-panel');
 function renderCharacterList() {
   characterList.innerHTML = '';
 
-  // 检查角色视频资源是否可用
-  const availableCharacters = AVAILABLE_CHARACTER_IDS; // 有视频资源的角色
+  // 妫€鏌ヨ鑹茶棰戣祫婧愭槸鍚﹀彲鐢?
+  const availableCharacters = AVAILABLE_CHARACTER_IDS; // 鏈夎棰戣祫婧愮殑瑙掕壊
 
   Object.values(CHARACTER_PROFILES).forEach(char => {
     const item = document.createElement('div');
@@ -1923,7 +2258,7 @@ function renderCharacterList() {
     item.innerHTML = `
       <span class="character-icon"><span class="iconify" data-icon="${char.icon}"></span></span>
       <div class="character-info">
-        <div class="character-name">${char.name}${!isAvailable ? ' <span class="coming-soon">即将上线</span>' : ''}</div>
+        <div class="character-name">${char.name}${!isAvailable ? ' <span class="coming-soon">鍗冲皢涓婄嚎</span>' : ''}</div>
         <div class="character-desc">${char.desc}</div>
       </div>
       ${char.id === currentCharacter.id ? '<span class="character-check"><span class="iconify" data-icon="mdi:check"></span></span>' : ''}
@@ -1945,54 +2280,796 @@ async function switchCharacter(characterId) {
   const newChar = CHARACTER_PROFILES[characterId];
   if (!newChar || newChar.id === currentCharacter.id) return;
 
-  console.log(`[角色切换] ${currentCharacter.name} → ${newChar.name}`);
+  console.log(`[瑙掕壊鍒囨崲] ${currentCharacter.name} 鈫?${newChar.name}`);
 
-  // 更新角色
+  // 鏇存柊瑙掕壊
   currentCharacter = newChar;
   VIDEO_SOURCES = { ...newChar.videos };
   saveSelectedCharacter(newChar.id);
 
-  // 更新光环颜色
+  // 鏇存柊鍏夌幆棰滆壊
   if (ENABLE_CHARACTER_BACKGROUND_EFFECTS && auraAnimator && newChar.auraColors) {
     auraAnimator.updateColors(newChar.auraColors);
   }
 
-  // 切换默认音色
+  // 鍒囨崲榛樿闊宠壊
   currentSelectedVoice = newChar.defaultVoice;
   try {
     await window.electronAPI.tts.setVoice(newChar.defaultVoice);
     saveSelectedVoice(newChar.defaultVoice);
   } catch (e) {}
 
-  // 关闭面板
+  // 鍏抽棴闈㈡澘
   characterPanel.style.display = 'none';
 
-  // 显示切换提示
-  showBubble(`已切换为「${escapeHtml(newChar.name)}」`);
+  // 鏄剧ず鍒囨崲鎻愮ず
+  showBubble(`\u5df2\u5207\u6362\u4e3a\u300c${escapeHtml(newChar.name)}\u300d`);
 
-  // 重新播放欢迎动画
+  // 閲嶆柊鎾斁娆㈣繋鍔ㄧ敾
   isFirstLaunch = true;
   playWelcomeVideo();
 
-  // 刷新角色列表和音色列表
+  // 鍒锋柊瑙掕壊鍒楄〃鍜岄煶鑹插垪琛?
   renderCharacterList();
   renderVoiceList();
 }
 
 function openCharacterPanel() {
+  hideOverlayPanels('character');
   renderCharacterList();
   characterPanel.style.display = 'flex';
 }
 
-// ===== 悬浮球模式 =====
+// ===== 鎮诞鐞冩ā寮?=====
+// ===== Skills / Cron panels =====
+const skillsPanelBtn = document.getElementById('skills-panel-btn');
+const skillsPanel = document.getElementById('skills-panel');
+const closeSkillsPanelBtn = document.getElementById('close-skills-panel');
+const refreshSkillsBtn = document.getElementById('refresh-skills-btn');
+const openManagedSkillsDirBtn = document.getElementById('open-managed-skills-dir-btn');
+const skillsPanelMeta = document.getElementById('skills-panel-meta');
+const skillsPanelError = document.getElementById('skills-panel-error');
+const skillsList = document.getElementById('skills-list');
+const skillsSlugInput = document.getElementById('skills-slug-input');
+const skillsInstallBtn = document.getElementById('skills-install-btn');
+
+const cronPanelBtn = document.getElementById('cron-panel-btn');
+const cronPanel = document.getElementById('cron-panel');
+const closeCronPanelBtn = document.getElementById('close-cron-panel');
+const refreshCronBtn = document.getElementById('refresh-cron-btn');
+const cronPanelError = document.getElementById('cron-panel-error');
+const cronList = document.getElementById('cron-list');
+const cronNameInput = document.getElementById('cron-name-input');
+const cronDescInput = document.getElementById('cron-desc-input');
+const cronExprInput = document.getElementById('cron-expr-input');
+const cronTzInput = document.getElementById('cron-tz-input');
+const cronMessageInput = document.getElementById('cron-message-input');
+const cronDeliveryChannelInput = document.getElementById('cron-delivery-channel-input');
+const cronDeliveryToInput = document.getElementById('cron-delivery-to-input');
+const cronCreateBtn = document.getElementById('cron-create-btn');
+const cronResetBtn = document.getElementById('cron-reset-btn');
+
+let skillsReportState = null;
+let skillsBusyKey = '';
+let skillsAdding = false;
+const skillApiKeyDrafts = {};
+
+let cronJobsState = [];
+let cronBusy = false;
+
+function hideOverlayPanels(except = '') {
+  const panels = [
+    ['voice', voicePanel],
+    ['character', characterPanel],
+    ['skills', skillsPanel],
+    ['cron', cronPanel]
+  ];
+  for (const [name, panel] of panels) {
+    if (!panel) continue;
+    if (name !== except) {
+      panel.style.display = 'none';
+    }
+  }
+}
+
+function setPanelError(element, message = '') {
+  if (!element) return;
+  element.textContent = message;
+}
+
+function formatDateTimeLabel(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return '--';
+  try {
+    return new Date(ms).toLocaleString();
+  } catch (error) {
+    return '--';
+  }
+}
+
+function getSkillMissingTags(skill) {
+  const missing = skill?.missing || {};
+  const tags = [];
+
+  const bins = Array.isArray(missing.bins) ? missing.bins : [];
+  const env = Array.isArray(missing.env) ? missing.env : [];
+  const config = Array.isArray(missing.config) ? missing.config : [];
+  const os = Array.isArray(missing.os) ? missing.os : [];
+
+  bins.forEach((value) => tags.push(`bin:${value}`));
+  env.forEach((value) => tags.push(`env:${value}`));
+  config.forEach((value) => tags.push(`config:${value}`));
+  os.forEach((value) => tags.push(`os:${value}`));
+
+  return tags;
+}
+
+function ensureSkillDrafts() {
+  const skills = Array.isArray(skillsReportState?.skills) ? skillsReportState.skills : [];
+  skills.forEach((skill) => {
+    const key = String(skill?.skillKey || '').trim();
+    if (!key || !skill?.primaryEnv) return;
+    if (typeof skillApiKeyDrafts[key] !== 'string') {
+      skillApiKeyDrafts[key] = '';
+    }
+  });
+}
+
+function renderSkillsPanelMeta() {
+  if (!skillsPanelMeta) return;
+  const workspaceDir = String(skillsReportState?.workspaceDir || '').trim();
+  const managedDir = String(skillsReportState?.managedSkillsDir || '').trim();
+  skillsPanelMeta.textContent =
+    `${t('skills.meta.workspace')}: ${workspaceDir || '-'}\n${t('skills.meta.managed')}: ${managedDir || '-'}`;
+}
+
+function renderSkillsList() {
+  if (!skillsList) return;
+  skillsList.innerHTML = '';
+  syncSkillAddControls();
+
+  const skills = Array.isArray(skillsReportState?.skills) ? skillsReportState.skills : [];
+  if (skills.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'skills-empty';
+    empty.textContent = t('skills.empty');
+    skillsList.appendChild(empty);
+    return;
+  }
+
+  skills.forEach((skill) => {
+    const skillKey = String(skill?.skillKey || '').trim();
+    const title = `${skill?.emoji ? `${skill.emoji} ` : ''}${String(skill?.name || skillKey || 'Skill')}`;
+    const description = String(skill?.description || '').trim();
+    const source = String(skill?.source || '-');
+    const missingTags = getSkillMissingTags(skill);
+    const installOptions = Array.isArray(skill?.install) ? skill.install : [];
+    const preferredInstall = installOptions[0] || null;
+    const canInstall = Boolean(preferredInstall && Array.isArray(skill?.missing?.bins) && skill.missing.bins.length > 0);
+    const busy = skillsBusyKey === skillKey;
+
+    const card = document.createElement('div');
+    card.className = 'skill-item';
+
+    const header = document.createElement('div');
+    header.className = 'skill-item-header';
+
+    const headerMain = document.createElement('div');
+    const titleEl = document.createElement('h4');
+    titleEl.className = 'skill-item-title';
+    titleEl.textContent = title;
+    headerMain.appendChild(titleEl);
+
+    if (description) {
+      const sub = document.createElement('div');
+      sub.className = 'skill-item-sub';
+      sub.textContent = description;
+      headerMain.appendChild(sub);
+    }
+
+    const badges = document.createElement('div');
+    badges.className = 'skill-badges';
+
+    const sourceChip = document.createElement('span');
+    sourceChip.className = 'status-chip';
+    sourceChip.textContent = source;
+    badges.appendChild(sourceChip);
+
+    const eligibleChip = document.createElement('span');
+    eligibleChip.className = `status-chip ${skill?.eligible ? 'ok' : 'warn'}`;
+    eligibleChip.textContent = skill?.eligible ? t('skills.badge.eligible') : t('skills.badge.blocked');
+    badges.appendChild(eligibleChip);
+
+    if (skill?.disabled) {
+      const disabledChip = document.createElement('span');
+      disabledChip.className = 'status-chip warn';
+      disabledChip.textContent = t('skills.badge.disabled');
+      badges.appendChild(disabledChip);
+    }
+
+    if (skill?.blockedByAllowlist) {
+      const blockedChip = document.createElement('span');
+      blockedChip.className = 'status-chip bad';
+      blockedChip.textContent = t('skills.badge.allowlistBlocked');
+      badges.appendChild(blockedChip);
+    }
+
+    headerMain.appendChild(badges);
+    header.appendChild(headerMain);
+
+    const actions = document.createElement('div');
+    actions.className = 'skill-actions';
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'skill-action-btn';
+    toggleBtn.disabled = busy || skillsAdding || !skillKey;
+    toggleBtn.textContent = skill?.disabled ? t('skills.btn.enable') : t('skills.btn.disable');
+    toggleBtn.addEventListener('click', () => {
+      if (!skillKey) return;
+      setSkillEnabled(skillKey, Boolean(skill?.disabled));
+    });
+    actions.appendChild(toggleBtn);
+
+    if (canInstall && preferredInstall) {
+      const installBtn = document.createElement('button');
+      installBtn.className = 'skill-action-btn primary';
+      installBtn.disabled = busy || skillsAdding || !skillKey;
+      installBtn.textContent = String(preferredInstall?.label || preferredInstall?.id || 'Install');
+      installBtn.addEventListener('click', () => {
+        installSkillOption(skillKey, String(skill?.name || ''), String(preferredInstall?.id || ''));
+      });
+      actions.appendChild(installBtn);
+    }
+
+    header.appendChild(actions);
+    card.appendChild(header);
+
+    if (missingTags.length > 0) {
+      const body = document.createElement('div');
+      body.className = 'skill-item-body';
+      body.textContent = `${t('skills.missing')}: ${missingTags.join(', ')}`;
+      card.appendChild(body);
+    }
+
+    if (skill?.primaryEnv) {
+      const keyRow = document.createElement('div');
+      keyRow.className = 'skill-key-row';
+
+      const input = document.createElement('input');
+      input.className = 'skill-key-input';
+      input.type = 'password';
+      input.placeholder = `${skill.primaryEnv} value`;
+      input.value = String(skillApiKeyDrafts[skillKey] || '');
+      input.addEventListener('input', () => {
+        skillApiKeyDrafts[skillKey] = input.value;
+      });
+
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'skill-action-btn primary';
+      saveBtn.disabled = busy || skillsAdding || !skillKey;
+      saveBtn.textContent = t('skills.btn.saveKey');
+      saveBtn.addEventListener('click', () => {
+        saveSkillApiKey(skillKey);
+      });
+
+      keyRow.appendChild(input);
+      keyRow.appendChild(saveBtn);
+      card.appendChild(keyRow);
+    }
+
+    skillsList.appendChild(card);
+  });
+}
+
+function syncSkillAddControls() {
+  if (skillsInstallBtn) {
+    skillsInstallBtn.disabled = skillsAdding;
+    skillsInstallBtn.textContent = skillsAdding ? t('skills.add.installing') : t('skills.add.button');
+  }
+  if (skillsSlugInput) {
+    skillsSlugInput.disabled = skillsAdding;
+  }
+}
+
+async function refreshSkillsReport() {
+  if (!window?.electronAPI?.skills) {
+    setPanelError(skillsPanelError, t('skills.error.apiUnavailable'));
+    return;
+  }
+
+  try {
+    setPanelError(skillsPanelError, '');
+    const result = await window.electronAPI.skills.list();
+    if (!result?.success) {
+      throw new Error(result?.error || 'skills.list failed');
+    }
+    skillsReportState = result.report || null;
+    ensureSkillDrafts();
+    renderSkillsPanelMeta();
+    renderSkillsList();
+  } catch (error) {
+    setPanelError(skillsPanelError, error?.message || String(error));
+    renderSkillsPanelMeta();
+    renderSkillsList();
+  } finally {
+    syncSkillAddControls();
+  }
+}
+
+async function setSkillEnabled(skillKey, enabled) {
+  if (!skillKey || !window?.electronAPI?.skills) return;
+  skillsBusyKey = skillKey;
+  renderSkillsList();
+
+  try {
+    const result = await window.electronAPI.skills.setEnabled(skillKey, enabled);
+    if (!result?.success) {
+      throw new Error(result?.error || 'skills.update failed');
+    }
+    await refreshSkillsReport();
+  } catch (error) {
+    setPanelError(skillsPanelError, error?.message || String(error));
+  } finally {
+    skillsBusyKey = '';
+    renderSkillsList();
+  }
+}
+
+async function saveSkillApiKey(skillKey) {
+  if (!skillKey || !window?.electronAPI?.skills) return;
+  skillsBusyKey = skillKey;
+  renderSkillsList();
+
+  try {
+    const apiKey = String(skillApiKeyDrafts[skillKey] || '');
+    const result = await window.electronAPI.skills.setApiKey(skillKey, apiKey);
+    if (!result?.success) {
+      throw new Error(result?.error || 'skills.update apiKey failed');
+    }
+    await refreshSkillsReport();
+  } catch (error) {
+    setPanelError(skillsPanelError, error?.message || String(error));
+  } finally {
+    skillsBusyKey = '';
+    renderSkillsList();
+  }
+}
+
+async function installSkillOption(skillKey, name, installId) {
+  if (!skillKey || !name || !installId || !window?.electronAPI?.skills) return;
+  skillsBusyKey = skillKey;
+  renderSkillsList();
+
+  try {
+    const result = await window.electronAPI.skills.install({ name, installId });
+    if (!result?.success) {
+      throw new Error(result?.error || 'skills.install failed');
+    }
+    await refreshSkillsReport();
+  } catch (error) {
+    setPanelError(skillsPanelError, error?.message || String(error));
+  } finally {
+    skillsBusyKey = '';
+    renderSkillsList();
+  }
+}
+
+async function openManagedSkillsDir() {
+  if (!window?.electronAPI?.skills) return;
+
+  try {
+    const result = await window.electronAPI.skills.openManagedDir();
+    if (result?.success) return;
+
+    const workspaceDir = String(skillsReportState?.workspaceDir || '').trim();
+    const managedDir = String(skillsReportState?.managedSkillsDir || '').trim();
+    let workspaceSkillsDir = '';
+    if (workspaceDir) {
+      const separator = workspaceDir.includes('\\') ? '\\' : '/';
+      workspaceSkillsDir = `${workspaceDir.replace(/[\\/]+$/, '')}${separator}skills`;
+    }
+
+    const fallbackDirs = [workspaceSkillsDir, managedDir].filter(Boolean);
+    if (window?.electronAPI?.shell?.openPath) {
+      for (const dir of fallbackDirs) {
+        const fallback = await window.electronAPI.shell.openPath(dir);
+        if (fallback?.success) return;
+      }
+    }
+
+    throw new Error(result?.error || 'open directory failed');
+  } catch (error) {
+    setPanelError(skillsPanelError, error?.message || String(error));
+  }
+}
+
+async function addSkillFromSlug() {
+  if (skillsAdding || !window?.electronAPI?.skills) return;
+
+  const slug = String(skillsSlugInput?.value || '').trim();
+  if (!slug || !/^[A-Za-z0-9._/-]+$/.test(slug)) {
+    setPanelError(skillsPanelError, t('skills.add.invalidSlug'));
+    return;
+  }
+
+  skillsAdding = true;
+  syncSkillAddControls();
+
+  try {
+    setPanelError(skillsPanelError, '');
+    const workspaceDir = String(skillsReportState?.workspaceDir || '').trim();
+    const result = await window.electronAPI.skills.installFromClawHub({ slug, workspaceDir });
+    if (!result?.success) {
+      throw new Error(result?.error || 'clawhub install failed');
+    }
+
+    if (skillsSlugInput) {
+      skillsSlugInput.value = '';
+    }
+    await refreshSkillsReport();
+  } catch (error) {
+    setPanelError(skillsPanelError, error?.message || String(error));
+  } finally {
+    skillsAdding = false;
+    syncSkillAddControls();
+  }
+}
+
+function openSkillsPanel() {
+  hideOverlayPanels('skills');
+  if (skillsPanel) {
+    skillsPanel.style.display = 'flex';
+  }
+  syncSkillAddControls();
+  refreshSkillsReport();
+}
+
+function resetCronForm() {
+  if (cronNameInput) cronNameInput.value = '';
+  if (cronDescInput) cronDescInput.value = '';
+  if (cronExprInput) cronExprInput.value = '';
+  if (cronTzInput) cronTzInput.value = '';
+  if (cronMessageInput) cronMessageInput.value = '';
+  if (cronDeliveryChannelInput) cronDeliveryChannelInput.value = '';
+  if (cronDeliveryToInput) cronDeliveryToInput.value = '';
+}
+
+function collectCronCreateInput() {
+  const name = String(cronNameInput?.value || '').trim();
+  const description = String(cronDescInput?.value || '').trim();
+  const scheduleExpr = String(cronExprInput?.value || '').trim();
+  const scheduleTz = String(cronTzInput?.value || '').trim();
+  const message = String(cronMessageInput?.value || '').trim();
+  const deliveryChannel = String(cronDeliveryChannelInput?.value || '').trim();
+  const deliveryTo = String(cronDeliveryToInput?.value || '').trim();
+
+  if (!name) {
+    throw new Error(t('cron.error.nameRequired'));
+  }
+  if (!scheduleExpr) {
+    throw new Error(t('cron.error.exprRequired'));
+  }
+  if (!message) {
+    throw new Error(t('cron.error.messageRequired'));
+  }
+
+  return {
+    name,
+    description: description || undefined,
+    scheduleExpr,
+    scheduleTz: scheduleTz || undefined,
+    message,
+    enabled: true,
+    deliveryChannel: deliveryChannel || undefined,
+    deliveryTo: deliveryTo || undefined
+  };
+}
+
+function renderCronList() {
+  if (!cronList) return;
+  cronList.innerHTML = '';
+
+  if (!Array.isArray(cronJobsState) || cronJobsState.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'cron-empty';
+    empty.textContent = t('cron.empty');
+    cronList.appendChild(empty);
+    return;
+  }
+
+  cronJobsState.forEach((job) => {
+    const id = String(job?.id || '').trim();
+
+    const card = document.createElement('div');
+    card.className = 'cron-item';
+
+    const header = document.createElement('div');
+    header.className = 'cron-item-header';
+
+    const main = document.createElement('div');
+    const title = document.createElement('h4');
+    title.className = 'cron-item-title';
+    title.textContent = String(job?.name || t('cron.label.unnamed'));
+    main.appendChild(title);
+
+    const sub = document.createElement('div');
+    sub.className = 'cron-item-sub';
+    sub.textContent = String(job?.scheduleLabel || t('cron.label.scheduleUnknown'));
+    main.appendChild(sub);
+
+    const badges = document.createElement('div');
+    badges.className = 'cron-badges';
+
+    const enabledChip = document.createElement('span');
+    enabledChip.className = `status-chip ${job?.enabled ? 'ok' : 'warn'}`;
+    enabledChip.textContent = job?.enabled ? t('cron.badge.enabled') : t('cron.badge.disabled');
+    badges.appendChild(enabledChip);
+
+    const status = String(job?.lastStatus || '').trim();
+    if (status) {
+      const statusChip = document.createElement('span');
+      statusChip.className = `status-chip ${status === 'ok' ? 'ok' : status === 'error' ? 'bad' : 'warn'}`;
+      statusChip.textContent = `${t('cron.badge.last')}: ${status}`;
+      badges.appendChild(statusChip);
+    }
+
+    main.appendChild(badges);
+    header.appendChild(main);
+
+    const actions = document.createElement('div');
+    actions.className = 'cron-item-actions';
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'cron-action-btn';
+    toggleBtn.disabled = cronBusy || !id;
+    toggleBtn.textContent = job?.enabled ? t('cron.btn.disable') : t('cron.btn.enable');
+    toggleBtn.addEventListener('click', () => {
+      toggleCronJobEnabled(id, !job?.enabled);
+    });
+    actions.appendChild(toggleBtn);
+
+    const runBtn = document.createElement('button');
+    runBtn.className = 'cron-action-btn primary';
+    runBtn.disabled = cronBusy || !id;
+    runBtn.textContent = t('cron.btn.runNow');
+    runBtn.addEventListener('click', () => {
+      runCronJobNow(id);
+    });
+    actions.appendChild(runBtn);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'cron-action-btn danger';
+    removeBtn.disabled = cronBusy || !id;
+    removeBtn.textContent = t('cron.btn.delete');
+    removeBtn.addEventListener('click', () => {
+      removeCronJob(id, String(job?.name || ''));
+    });
+    actions.appendChild(removeBtn);
+
+    header.appendChild(actions);
+    card.appendChild(header);
+
+    const bodyParts = [];
+    if (job?.description) bodyParts.push(`${t('cron.label.description')}: ${String(job.description)}`);
+    if (job?.message) bodyParts.push(`${t('cron.label.message')}: ${String(job.message)}`);
+    if (job?.nextRunAtMs) bodyParts.push(`${t('cron.label.nextRun')}: ${formatDateTimeLabel(Number(job.nextRunAtMs))}`);
+    if (job?.lastRunAtMs) bodyParts.push(`${t('cron.label.lastRun')}: ${formatDateTimeLabel(Number(job.lastRunAtMs))}`);
+    if (job?.lastError) bodyParts.push(`${t('cron.label.error')}: ${String(job.lastError)}`);
+
+    if (bodyParts.length > 0) {
+      const body = document.createElement('div');
+      body.className = 'cron-item-body';
+      body.textContent = bodyParts.join('\n');
+      card.appendChild(body);
+    }
+
+    cronList.appendChild(card);
+  });
+}
+
+async function refreshCronJobs() {
+  if (!window?.electronAPI?.cron) {
+    setPanelError(cronPanelError, t('cron.error.apiUnavailable'));
+    return;
+  }
+
+  try {
+    setPanelError(cronPanelError, '');
+    const result = await window.electronAPI.cron.list();
+    if (!result?.success) {
+      throw new Error(result?.error || 'cron.list failed');
+    }
+
+    const jobs = Array.isArray(result?.jobs) ? result.jobs : [];
+    cronJobsState = jobs.sort((a, b) => {
+      const enabledDelta = Number(Boolean(b?.enabled)) - Number(Boolean(a?.enabled));
+      if (enabledDelta !== 0) return enabledDelta;
+      const nextA = Number(a?.nextRunAtMs || 0);
+      const nextB = Number(b?.nextRunAtMs || 0);
+      if (nextA && nextB) return nextA - nextB;
+      return String(a?.name || '').localeCompare(String(b?.name || ''));
+    });
+
+    renderCronList();
+  } catch (error) {
+    setPanelError(cronPanelError, error?.message || String(error));
+    renderCronList();
+  }
+}
+
+async function createCronJob() {
+  if (cronBusy || !window?.electronAPI?.cron) return;
+
+  try {
+    setPanelError(cronPanelError, '');
+    const input = collectCronCreateInput();
+    cronBusy = true;
+    renderCronList();
+
+    const result = await window.electronAPI.cron.add(input);
+    if (!result?.success) {
+      throw new Error(result?.error || 'cron.add failed');
+    }
+
+    resetCronForm();
+    await refreshCronJobs();
+  } catch (error) {
+    setPanelError(cronPanelError, error?.message || String(error));
+  } finally {
+    cronBusy = false;
+    renderCronList();
+  }
+}
+
+async function toggleCronJobEnabled(id, enabled) {
+  if (!id || cronBusy || !window?.electronAPI?.cron) return;
+  cronBusy = true;
+  renderCronList();
+
+  try {
+    const result = await window.electronAPI.cron.toggle(id, enabled);
+    if (!result?.success) {
+      throw new Error(result?.error || 'cron.update failed');
+    }
+    await refreshCronJobs();
+  } catch (error) {
+    setPanelError(cronPanelError, error?.message || String(error));
+  } finally {
+    cronBusy = false;
+    renderCronList();
+  }
+}
+
+async function runCronJobNow(id) {
+  if (!id || cronBusy || !window?.electronAPI?.cron) return;
+  cronBusy = true;
+  renderCronList();
+
+  try {
+    const result = await window.electronAPI.cron.runNow(id);
+    if (!result?.success) {
+      throw new Error(result?.error || 'cron.run failed');
+    }
+    await refreshCronJobs();
+  } catch (error) {
+    setPanelError(cronPanelError, error?.message || String(error));
+  } finally {
+    cronBusy = false;
+    renderCronList();
+  }
+}
+
+async function removeCronJob(id, name) {
+  if (!id || cronBusy || !window?.electronAPI?.cron) return;
+  const ok = window.confirm(t('cron.confirm.delete', { name: name || id }));
+  if (!ok) return;
+
+  cronBusy = true;
+  renderCronList();
+
+  try {
+    const result = await window.electronAPI.cron.remove(id);
+    if (!result?.success) {
+      throw new Error(result?.error || 'cron.remove failed');
+    }
+    await refreshCronJobs();
+  } catch (error) {
+    setPanelError(cronPanelError, error?.message || String(error));
+  } finally {
+    cronBusy = false;
+    renderCronList();
+  }
+}
+
+function openCronPanel() {
+  hideOverlayPanels('cron');
+  if (cronPanel) {
+    cronPanel.style.display = 'flex';
+  }
+  refreshCronJobs();
+}
+
 const miniOrb = document.getElementById('mini-orb');
 const widgetContainer = document.getElementById('widget-container');
 const miniOrbVideo = document.getElementById('mini-orb-video');
 let isMiniMode = false;
 let miniOrbClickTimer = null;
+let miniOrbIgnoreClickUntil = 0;
+const miniDragState = {
+  active: false,
+  moved: false,
+  startScreenX: 0,
+  startScreenY: 0,
+  offsetX: 0,
+  offsetY: 0
+};
+
+function clearMiniDragListeners() {
+  document.removeEventListener('mousemove', onMiniOrbMouseMove);
+  document.removeEventListener('mouseup', onMiniOrbMouseUp);
+}
+
+function cancelMiniOrbDrag() {
+  miniDragState.active = false;
+  miniDragState.moved = false;
+  clearMiniDragListeners();
+  if (miniOrb) {
+    miniOrb.classList.remove('dragging');
+  }
+}
+
+async function onMiniOrbMouseDown(event) {
+  if (!isMiniMode || !miniOrb) return;
+  if (event.button !== 0) return;
+  if (event.target.closest('.mini-expand-btn')) return;
+  if (!window?.electronAPI?.getWindowBounds || !window?.electronAPI?.moveMiniWindow) return;
+
+  const boundsResult = await window.electronAPI.getWindowBounds();
+  if (!boundsResult?.success || !boundsResult?.bounds) return;
+
+  const bounds = boundsResult.bounds;
+  miniDragState.active = true;
+  miniDragState.moved = false;
+  miniDragState.startScreenX = event.screenX;
+  miniDragState.startScreenY = event.screenY;
+  miniDragState.offsetX = event.screenX - Number(bounds.x || 0);
+  miniDragState.offsetY = event.screenY - Number(bounds.y || 0);
+
+  miniOrb.classList.add('dragging');
+  document.addEventListener('mousemove', onMiniOrbMouseMove);
+  document.addEventListener('mouseup', onMiniOrbMouseUp);
+}
+
+function onMiniOrbMouseMove(event) {
+  if (!miniDragState.active || !isMiniMode) return;
+  const deltaX = Math.abs(event.screenX - miniDragState.startScreenX);
+  const deltaY = Math.abs(event.screenY - miniDragState.startScreenY);
+  if (deltaX > 2 || deltaY > 2) {
+    miniDragState.moved = true;
+  }
+
+  if (!window?.electronAPI?.moveMiniWindow) return;
+  const x = event.screenX - miniDragState.offsetX;
+  const y = event.screenY - miniDragState.offsetY;
+  window.electronAPI.moveMiniWindow({ x, y }).catch(() => {});
+}
+
+function onMiniOrbMouseUp() {
+  if (!miniDragState.active) return;
+
+  const moved = miniDragState.moved;
+  cancelMiniOrbDrag();
+
+  if (moved) {
+    miniOrbIgnoreClickUntil = Date.now() + 280;
+    if (miniOrbClickTimer) {
+      clearTimeout(miniOrbClickTimer);
+      miniOrbClickTimer = null;
+    }
+  }
+}
 
 function initMiniMode() {
-  // 监听主进程的迷你模式切换
+  // 鐩戝惉涓昏繘绋嬬殑杩蜂綘妯″紡鍒囨崲
   window.electronAPI.onMiniMode((isMini) => {
     if (isMini) {
       enterMiniMode();
@@ -2001,30 +3078,35 @@ function initMiniMode() {
     }
   });
 
-  // 单击悬浮球 = 开始/停止聆听；双击悬浮球 = 恢复大窗口
+  // 鍗曞嚮鎮诞鐞?= 寮€濮?鍋滄鑱嗗惉锛涘弻鍑绘偓娴悆 = 鎭㈠澶х獥鍙?
+  miniOrb.addEventListener('mousedown', (e) => {
+    onMiniOrbMouseDown(e).catch(() => {});
+  });
+
   miniOrb.addEventListener('click', (e) => {
-    console.log('[悬浮球] 点击事件触发, isMiniMode:', isMiniMode, 'target:', e.target.className);
-    // 点击放大按钮时不处理
+    if (Date.now() < miniOrbIgnoreClickUntil) return;
+    console.log('[鎮诞鐞僝 鐐瑰嚮浜嬩欢瑙﹀彂, isMiniMode:', isMiniMode, 'target:', e.target.className);
+    // 鐐瑰嚮鏀惧ぇ鎸夐挳鏃朵笉澶勭悊
     if (e.target.closest('.mini-expand-btn')) return;
 
     if (miniOrbClickTimer) {
-      // 双击：恢复大窗口
+      // 鍙屽嚮锛氭仮澶嶅ぇ绐楀彛
       clearTimeout(miniOrbClickTimer);
       miniOrbClickTimer = null;
-      console.log('[悬浮球] 双击 → 恢复大窗口');
+      console.log('[MiniOrb] Double click -> restore main window');
       window.electronAPI.restoreWindow();
     } else {
-      // 等待判断是否双击
+      // 绛夊緟鍒ゆ柇鏄惁鍙屽嚮
       miniOrbClickTimer = setTimeout(() => {
         miniOrbClickTimer = null;
-        console.log('[悬浮球] 单击 → 切换聆听');
-        // 单击：切换聆听
+        console.log('[鎮诞鐞僝 鍗曞嚮 鈫?鍒囨崲鑱嗗惉');
+        // 鍗曞嚮锛氬垏鎹㈣亞鍚?
         onMiniOrbTap();
       }, 250);
     }
   });
 
-  // 放大按钮
+  // 鏀惧ぇ鎸夐挳
   const expandBtn = document.getElementById('mini-expand-btn');
   if (expandBtn) {
     expandBtn.addEventListener('click', (e) => {
@@ -2034,12 +3116,12 @@ function initMiniMode() {
   }
 }
 
-// 悬浮球单击 → 开始/停止聆听
+// 鎮诞鐞冨崟鍑?鈫?寮€濮?鍋滄鑱嗗惉
 async function onMiniOrbTap() {
-  console.log('[悬浮球] onMiniOrbTap, isMiniMode:', isMiniMode, 'appState:', appState, 'isProcessing:', isProcessing);
+  console.log('[鎮诞鐞僝 onMiniOrbTap, isMiniMode:', isMiniMode, 'appState:', appState, 'isProcessing:', isProcessing);
   if (!isMiniMode) return;
 
-  // speaking 状态下允许打断 → 直接进入聆听
+  // speaking 鐘舵€佷笅鍏佽鎵撴柇 鈫?鐩存帴杩涘叆鑱嗗惉
   if (appState === 'speaking') {
     interruptTTS();
     isProcessing = false;
@@ -2052,7 +3134,7 @@ async function onMiniOrbTap() {
   if (isProcessing) return;
 
   if (appState === 'listening' || appState === 'followup') {
-    // 正在聆听 → 停止
+    // 姝ｅ湪鑱嗗惉 鈫?鍋滄
     clearTimeout(executeTimer);
     accumulatedTranscript = '';
     await stopRecording();
@@ -2061,14 +3143,14 @@ async function onMiniOrbTap() {
     return;
   }
 
-  // 开始聆听
+  // 寮€濮嬭亞鍚?
   accumulatedTranscript = '';
   setAppState('listening');
   setMiniOrbState('listening');
   await startRecording();
 }
 
-// 更新悬浮球视觉状态
+// 鏇存柊鎮诞鐞冭瑙夌姸鎬?
 function setMiniOrbState(state) {
   if (!isMiniMode) return;
   miniOrb.classList.remove('mini-listening', 'mini-thinking', 'mini-speaking');
@@ -2079,7 +3161,7 @@ function setMiniOrbState(state) {
   } else if (state === 'speaking') {
     miniOrb.classList.add('mini-speaking');
   }
-  // 切换悬浮球视频匹配状态
+  // 鍒囨崲鎮诞鐞冭棰戝尮閰嶇姸鎬?
   const videoSrc = VIDEO_SOURCES[state] || VIDEO_SOURCES.idle;
   const source = miniOrbVideo.querySelector('source');
   if (source && !source.src.endsWith(videoSrc)) {
@@ -2090,28 +3172,29 @@ function setMiniOrbState(state) {
 }
 
 function enterMiniMode() {
-  console.log('[悬浮球] 进入迷你模式');
+  console.log('[鎮诞鐞僝 杩涘叆杩蜂綘妯″紡');
   isMiniMode = true;
   widgetContainer.style.display = 'none';
   miniOrb.style.display = 'flex';
-  // 更新悬浮球视频为当前状态
+  // 鏇存柊鎮诞鐞冭棰戜负褰撳墠鐘舵€?
   setMiniOrbState(appState);
 }
 
 function exitMiniMode() {
-  console.log('[悬浮球] 退出迷你模式，恢复完整窗口');
+  console.log('[鎮诞鐞僝 閫€鍑鸿糠浣犳ā寮忥紝鎭㈠瀹屾暣绐楀彛');
   isMiniMode = false;
+  cancelMiniOrbDrag();
   miniOrb.style.display = 'none';
   miniOrb.classList.remove('mini-listening', 'mini-thinking', 'mini-speaking');
   widgetContainer.style.display = 'flex';
 
-  // 如果在聆听中恢复，保持聆听状态
+  // 濡傛灉鍦ㄨ亞鍚腑鎭㈠锛屼繚鎸佽亞鍚姸鎬?
   if (appState === 'listening' || appState === 'followup') {
     setAppState(appState);
   }
 }
 
-// ===== 事件监听 =====
+// ===== 浜嬩欢鐩戝惉 =====
 lobsterArea.addEventListener('click', onLobsterClick);
 
 voiceSelectBtn.addEventListener('click', (e) => {
@@ -2124,6 +3207,27 @@ characterSelectBtn.addEventListener('click', (e) => {
   openCharacterPanel();
 });
 
+if (skillsPanelBtn) {
+  skillsPanelBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openSkillsPanel();
+  });
+}
+
+if (cronPanelBtn) {
+  cronPanelBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openCronPanel();
+  });
+}
+
+if (languageToggleBtn) {
+  languageToggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleLanguage();
+  });
+}
+
 closeCharacterPanel.addEventListener('click', (e) => {
   e.stopPropagation();
   characterPanel.style.display = 'none';
@@ -2133,6 +3237,81 @@ closeVoicePanel.addEventListener('click', (e) => {
   e.stopPropagation();
   voicePanel.style.display = 'none';
 });
+
+if (closeSkillsPanelBtn) {
+  closeSkillsPanelBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    skillsPanel.style.display = 'none';
+  });
+}
+
+if (refreshSkillsBtn) {
+  refreshSkillsBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    refreshSkillsReport();
+  });
+}
+
+if (openManagedSkillsDirBtn) {
+  openManagedSkillsDirBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openManagedSkillsDir();
+  });
+}
+
+if (skillsInstallBtn) {
+  skillsInstallBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    addSkillFromSlug();
+  });
+}
+
+if (skillsSlugInput) {
+  skillsSlugInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addSkillFromSlug();
+    }
+  });
+}
+
+if (closeCronPanelBtn) {
+  closeCronPanelBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    cronPanel.style.display = 'none';
+  });
+}
+
+if (refreshCronBtn) {
+  refreshCronBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    refreshCronJobs();
+  });
+}
+
+if (cronCreateBtn) {
+  cronCreateBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    createCronJob();
+  });
+}
+
+if (cronResetBtn) {
+  cronResetBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    resetCronForm();
+    setPanelError(cronPanelError, '');
+  });
+}
+
+if (cronMessageInput) {
+  cronMessageInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      createCronJob();
+    }
+  });
+}
 
 minimizeBtn.addEventListener('click', (e) => {
   e.stopPropagation();
@@ -2144,19 +3323,127 @@ closeBtn.addEventListener('click', (e) => {
   window.electronAPI.closeWindow();
 });
 
-// ===== 文本输入处理 =====
+// ===== 鏂囨湰杈撳叆澶勭悊 =====
+function normalizeSelectedFileEntry(file) {
+  if (!file) return null;
+
+  const rawPath = typeof file.path === 'string' ? file.path.trim() : '';
+  const normalizedPath = rawPath || '';
+  const fallbackName = normalizedPath ? normalizedPath.split(/[/\\]/).pop() : '';
+  const name = String(file.name || fallbackName || 'file').trim();
+  const size = Number(file.size);
+  const lastModified = Number(file.lastModified);
+
+  const key = `${normalizedPath}|${name}|${Number.isFinite(size) ? size : 0}|${Number.isFinite(lastModified) ? lastModified : 0}`;
+  return {
+    key,
+    path: normalizedPath,
+    name,
+    size: Number.isFinite(size) ? size : null
+  };
+}
+
+function renderAttachmentSummary() {
+  if (!attachmentSummaryEl) return;
+
+  if (!Array.isArray(selectedChatFiles) || selectedChatFiles.length === 0) {
+    attachmentSummaryEl.style.display = 'none';
+    attachmentSummaryEl.textContent = '';
+    attachmentSummaryEl.removeAttribute('title');
+    return;
+  }
+
+  const previewLimit = 3;
+  const previewFiles = selectedChatFiles.slice(0, previewLimit);
+  const namesText = previewFiles
+    .map((file) => String(file?.name || file?.path || 'file').trim())
+    .filter(Boolean)
+    .join(', ');
+  const remainCount = selectedChatFiles.length - previewFiles.length;
+  const moreText = remainCount > 0 ? ` ${t('chat.attach.more', { count: remainCount })}` : '';
+  const countText = t('chat.attach.selectedCount', { count: selectedChatFiles.length });
+
+  attachmentSummaryEl.textContent = `${countText}: ${namesText}${moreText}`;
+  attachmentSummaryEl.title = selectedChatFiles
+    .map((file, index) => `${index + 1}. ${file.path || file.name}`)
+    .join('\n');
+  attachmentSummaryEl.style.display = 'block';
+}
+
+function clearSelectedFiles() {
+  selectedChatFiles = [];
+  if (fileInput) {
+    fileInput.value = '';
+  }
+  renderAttachmentSummary();
+}
+
+function addFilesToSelection(fileList) {
+  const incoming = Array.from(fileList || [])
+    .map(normalizeSelectedFileEntry)
+    .filter(Boolean);
+
+  if (!incoming.length) return;
+
+  const seen = new Set(selectedChatFiles.map((item) => item.key));
+  for (const file of incoming) {
+    if (seen.has(file.key)) continue;
+    selectedChatFiles.push(file);
+    seen.add(file.key);
+  }
+  renderAttachmentSummary();
+}
+
+function buildCommandWithSelectedFiles(text, files) {
+  const normalizedText = String(text || '').trim();
+  const normalizedFiles = Array.isArray(files) ? files.filter(Boolean) : [];
+
+  if (!normalizedFiles.length) return normalizedText;
+
+  const sectionTitle = t('chat.attach.sectionTitle');
+  const fileLines = normalizedFiles.map((file, index) => `${index + 1}. ${file.path || file.name}`);
+  const prompt = normalizedText || t('chat.attach.defaultPrompt');
+
+  return `${prompt}\n\n${sectionTitle}\n${fileLines.join('\n')}`;
+}
+
 async function handleTextInput() {
   const text = textInput.value.trim();
-  if (!text || isProcessing) return;
+  if (isProcessing) return;
 
-  // 清空输入框
+  const hasFiles = selectedChatFiles.length > 0;
+  if (!text && !hasFiles) return;
+
+  const command = buildCommandWithSelectedFiles(text, selectedChatFiles);
+
+  // 娓呯┖杈撳叆妗?
   textInput.value = '';
+  clearSelectedFiles();
 
-  // 显示用户输入的文字
-  showBubble('💬 ' + escapeHtml(text), true);
+  // 鏄剧ず鐢ㄦ埛杈撳叆鐨勬枃瀛?
+  const bubblePreview = text || command;
+  showBubble('馃挰 ' + escapeHtml(bubblePreview), true);
 
-  // 直接处理命令（不需要语音识别）
-  await handleCommand(text);
+  // 鐩存帴澶勭悊鍛戒护锛堜笉闇€瑕佽闊宠瘑鍒級
+  await handleCommand(command);
+}
+
+if (fileUploadBtn && fileInput) {
+  fileUploadBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    fileInput.click();
+  });
+}
+
+if (fileInput) {
+  fileInput.addEventListener('change', (e) => {
+    selectedChatFiles = [];
+    addFilesToSelection(e.target?.files);
+    if (selectedChatFiles.length > 0 && statusHint && appState === 'idle') {
+      statusHint.textContent = t('chat.attach.selectedCount', { count: selectedChatFiles.length });
+    }
+    fileInput.value = '';
+  });
 }
 
 sendBtn.addEventListener('click', handleTextInput);
@@ -2166,3 +3453,5 @@ textInput.addEventListener('keypress', (e) => {
     handleTextInput();
   }
 });
+
+

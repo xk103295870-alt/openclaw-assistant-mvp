@@ -1,20 +1,19 @@
-const { contextBridge, ipcRenderer } = require('electron');
+﻿const { contextBridge, ipcRenderer } = require('electron');
 
-// 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
-  // OpenClaw 相关
+  // OpenClaw chat helpers
   getEmails: () => ipcRenderer.invoke('openclaw:getEmails'),
   getDailyBriefing: () => ipcRenderer.invoke('openclaw:getDailyBriefing'),
   executeCommand: (command) => ipcRenderer.invoke('openclaw:executeCommand', command),
+  gatewayRpc: (method, params = {}) => ipcRenderer.invoke('gateway:rpc', method, params),
 
-  // Deepgram 语音识别
+  // Deepgram
   deepgram: {
     startListening: () => ipcRenderer.invoke('deepgram:startListening'),
     stopListening: () => ipcRenderer.invoke('deepgram:stopListening'),
     sendAudio: (audioData) => ipcRenderer.invoke('deepgram:sendAudio', audioData),
     textToSpeech: (text) => ipcRenderer.invoke('deepgram:textToSpeech', text),
 
-    // 事件监听 - 返回取消函数
     onConnected: (callback) => {
       const handler = () => callback();
       ipcRenderer.on('deepgram:connected', handler);
@@ -40,22 +39,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('deepgram:utteranceEnd', handler);
       return () => ipcRenderer.removeListener('deepgram:utteranceEnd', handler);
     },
-
-    // 流式 TTS 音频块事件
     onAudioChunk: (callback) => {
       const handler = (event, data) => callback(data);
       ipcRenderer.on('tts:audioChunk', handler);
       return () => ipcRenderer.removeListener('tts:audioChunk', handler);
     },
-
-    // 首个句子事件（用于前端立即显示）
     onFirstSentence: (callback) => {
       const handler = (event, data) => callback(data);
       ipcRenderer.on('clawdbot:firstSentence', handler);
       return () => ipcRenderer.removeListener('clawdbot:firstSentence', handler);
     },
-
-    // 清理所有监听器
     removeAllListeners: () => {
       ipcRenderer.removeAllListeners('deepgram:connected');
       ipcRenderer.removeAllListeners('deepgram:transcript');
@@ -67,28 +60,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
 
-  // TTS 音色选择
+  // TTS voice control
   tts: {
     setVoice: (voiceId) => ipcRenderer.invoke('tts:setVoice', voiceId),
     getVoice: () => ipcRenderer.invoke('tts:getVoice'),
-    stop: () => ipcRenderer.invoke('tts:stop')  // 停止 TTS 播放
+    stop: () => ipcRenderer.invoke('tts:stop')
   },
 
-  // 异步任务管理
+  // Async task manager
   task: {
     create: (message) => ipcRenderer.invoke('task:create', message),
     get: (taskId) => ipcRenderer.invoke('task:get', taskId),
     getAll: () => ipcRenderer.invoke('task:getAll'),
     cancel: (taskId) => ipcRenderer.invoke('task:cancel', taskId),
 
-    // 任务完成事件
     onCompleted: (callback) => {
       const handler = (event, data) => callback(data);
       ipcRenderer.on('task-completed', handler);
       return () => ipcRenderer.removeListener('task-completed', handler);
     },
-
-    // 任务失败事件
     onFailed: (callback) => {
       const handler = (event, data) => callback(data);
       ipcRenderer.on('task-failed', handler);
@@ -96,19 +86,44 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
 
-  // 窗口控制
+  // Skills manager
+  skills: {
+    list: () => ipcRenderer.invoke('skills:list'),
+    setEnabled: (skillKey, enabled) => ipcRenderer.invoke('skills:setEnabled', skillKey, enabled),
+    setApiKey: (skillKey, apiKey) => ipcRenderer.invoke('skills:setApiKey', skillKey, apiKey),
+    setEnv: (skillKey, env) => ipcRenderer.invoke('skills:setEnv', skillKey, env),
+    install: (params) => ipcRenderer.invoke('skills:install', params),
+    installFromClawHub: (params) => ipcRenderer.invoke('skills:installFromClawHub', params),
+    openManagedDir: () => ipcRenderer.invoke('skills:openManagedDir')
+  },
+
+  // Cron manager
+  cron: {
+    list: () => ipcRenderer.invoke('cron:list'),
+    add: (input) => ipcRenderer.invoke('cron:add', input),
+    toggle: (id, enabled) => ipcRenderer.invoke('cron:toggle', id, enabled),
+    runNow: (id) => ipcRenderer.invoke('cron:runNow', id),
+    remove: (id) => ipcRenderer.invoke('cron:remove', id)
+  },
+
+  // Window controls
   minimizeWindow: () => ipcRenderer.send('window:minimize'),
   restoreWindow: () => ipcRenderer.send('window:restore'),
   closeWindow: () => ipcRenderer.send('window:close'),
+  getWindowBounds: () => ipcRenderer.invoke('window:getBounds'),
+  moveMiniWindow: (position) => ipcRenderer.invoke('window:moveMiniWindow', position),
   onMiniMode: (callback) => {
     const handler = (event, isMini) => callback(isMini);
     ipcRenderer.on('window:miniMode', handler);
     return () => ipcRenderer.removeListener('window:miniMode', handler);
   },
 
-  // 文件操作
+  // File helpers
   file: {
-    // 在 Finder 中显示文件
     showInFolder: (filePath) => ipcRenderer.invoke('file:showInFolder', filePath)
+  },
+
+  shell: {
+    openPath: (targetPath) => ipcRenderer.invoke('shell:openPath', targetPath)
   }
 });
