@@ -1357,6 +1357,47 @@ function initDeepgramListeners() {
 let audioQueue = [];
 let isPlayingQueue = false;
 let streamingTextBuffer = '';
+let browserTTSUtterance = null;
+
+function stopBrowserSpeech() {
+  if (window.speechSynthesis) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch (e) {
+      // ignore cancel errors
+    }
+  }
+  browserTTSUtterance = null;
+}
+
+function speakWithBrowserTTS(text) {
+  return new Promise((resolve) => {
+    if (!window.speechSynthesis || typeof window.SpeechSynthesisUtterance !== 'function') {
+      resolve(false);
+      return;
+    }
+
+    try {
+      stopBrowserSpeech();
+      const utterance = new window.SpeechSynthesisUtterance(String(text || ''));
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+      utterance.onend = () => {
+        if (browserTTSUtterance === utterance) browserTTSUtterance = null;
+        resolve(true);
+      };
+      utterance.onerror = () => {
+        if (browserTTSUtterance === utterance) browserTTSUtterance = null;
+        resolve(false);
+      };
+      browserTTSUtterance = utterance;
+      window.speechSynthesis.speak(utterance);
+    } catch (error) {
+      resolve(false);
+    }
+  });
+}
 
 function interruptTTS() {
   // 鍋滄褰撳墠鎾斁
@@ -1371,6 +1412,7 @@ function interruptTTS() {
   audioQueue = [];
   isPlayingQueue = false;
   streamingTextBuffer = '';
+  stopBrowserSpeech();
   isSpeaking = false;
   // 閫氱煡涓昏繘绋嬪仠姝?TTS 鐢熸垚
   window.electronAPI.tts.stop();
@@ -1733,7 +1775,11 @@ async function playTextToSpeech(text) {
 
     if (!result.success) {
       console.warn('[榫欒櫨鍔╂墜] TTS 澶辫触:', result.error);
+      const spoken = await speakWithBrowserTTS(text);
       isSpeaking = false;
+      if (!spoken) {
+        audioPlayer = null;
+      }
       return;
     }
 
@@ -1769,8 +1815,11 @@ async function playTextToSpeech(text) {
     });
   } catch (error) {
     console.error('[榫欒櫨鍔╂墜] TTS 澶辫触:', error);
+    const spoken = await speakWithBrowserTTS(text);
     isSpeaking = false;
-    audioPlayer = null;
+    if (!spoken) {
+      audioPlayer = null;
+    }
   }
 }
 

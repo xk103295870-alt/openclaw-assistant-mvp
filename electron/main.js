@@ -1,4 +1,6 @@
 const { app, BrowserWindow, ipcMain, Notification, shell, screen } = require('electron');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { createClient, LiveTranscriptionEvents } = require('@deepgram/sdk');
@@ -171,9 +173,27 @@ let deepgramLive = null;
 let currentSender = null;
 
 // ===== OpenClaw Gateway / Clawdbot WebSocket ?? =====
+function loadOpenClawGatewayDefaults() {
+  const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
+  try {
+    if (!fs.existsSync(configPath)) {
+      return { configPath, port: '', token: '' };
+    }
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    const port = parsed?.gateway?.port != null ? String(parsed.gateway.port).trim() : '';
+    const token = String(parsed?.gateway?.auth?.token || '').trim();
+    return { configPath, port, token };
+  } catch (error) {
+    console.warn('[Gateway] Failed to load ~/.openclaw/openclaw.json:', error.message);
+    return { configPath, port: '', token: '' };
+  }
+}
+
+const OPENCLAW_GATEWAY_DEFAULTS = loadOpenClawGatewayDefaults();
 const OPENCLAW_GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL;
-const OPENCLAW_GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT;
-const OPENCLAW_GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN;
+const OPENCLAW_GATEWAY_PORT = process.env.OPENCLAW_GATEWAY_PORT || OPENCLAW_GATEWAY_DEFAULTS.port;
+const OPENCLAW_GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || OPENCLAW_GATEWAY_DEFAULTS.token;
 const OPENCLAW_SESSION_KEY =
   process.env.OPENCLAW_SESSION_KEY ||
   process.env.CLAWDBOT_SESSION_KEY ||
@@ -192,8 +212,12 @@ const CLAWDBOT_PORT = OPENCLAW_GATEWAY_PORT || process.env.CLAWDBOT_PORT || 1878
 const CLAWDBOT_TOKEN =
   OPENCLAW_GATEWAY_TOKEN ||
   process.env.CLAWDBOT_TOKEN ||
-  '6d4c9e5c78347a57af8f13136c162033f49229840cbe3c69';
+  '';
 const CLAWDBOT_WS_URL = OPENCLAW_GATEWAY_URL || `ws://localhost:${CLAWDBOT_PORT}`;
+
+console.log(
+  `[Gateway] ws=${CLAWDBOT_WS_URL}, token=${CLAWDBOT_TOKEN ? 'configured' : 'missing'}, source=${OPENCLAW_GATEWAY_TOKEN ? 'env/openclaw.json' : (process.env.CLAWDBOT_TOKEN ? 'env(clawdbot)' : 'missing')}`
+);
 
 let clawdbotWs = null;
 let clawdbotConnected = false;
@@ -390,6 +414,17 @@ class TTSQueueManager {
   async processQueue() {
     if (this.isProcessing || this.audioQueue.length === 0) return;
 
+    const configError = getMiniMaxTTSConfigError();
+    if (configError) {
+      if (!ttsConfigWarned) {
+        console.warn(`[TTS] ${configError}`);
+        ttsConfigWarned = true;
+      }
+      this.audioQueue = [];
+      this.isProcessing = false;
+      return;
+    }
+
     this.isProcessing = true;
 
     while (this.audioQueue.length > 0 && !this.isStopped) {
@@ -445,6 +480,12 @@ function connectClawdbot() {
         // 处理连接挑战
         if (msg.type === 'event' && msg.event === 'connect.challenge') {
           console.log('[Clawdbot] 收到连接挑战，发送认证...');
+          if (!CLAWDBOT_TOKEN) {
+            clearTimeout(timeout);
+            reject(new Error('OpenClaw Gateway token missing. Set OPENCLAW_GATEWAY_TOKEN or configure ~/.openclaw/openclaw.json gateway.auth.token'));
+            try { clawdbotWs.close(); } catch (e) {}
+            return;
+          }
           clawdbotWs.send(JSON.stringify({
             type: 'req',
             id: 'connect-1',
@@ -1371,14 +1412,23 @@ const MINIMAX_INCLUDE_GROUP_ID =
 
 // 当前选择的音色（可被前端动态修改）
 let currentVoiceId = process.env.MINIMAX_VOICE_ID || 'Lovely_Girl';
+let ttsConfigWarned = false;
+
+function getMiniMaxTTSConfigError() {
+  if (!MINIMAX_API_KEY) {
+    return 'TTS config missing: set MINIMAX_API_KEY';
+  }
+  if (MINIMAX_INCLUDE_GROUP_ID && !MINIMAX_GROUP_ID) {
+    return 'TTS config missing: set MINIMAX_GROUP_ID or set MINIMAX_INCLUDE_GROUP_ID=false';
+  }
+  return '';
+}
 
 // 核心 TTS 函数（提取为独立函数，供 TTSQueueManager 调用）
 async function callMiniMaxTTS(text) {
-  if (!MINIMAX_API_KEY) {
-    throw new Error('MiniMax API Key ???');
-  }
-  if (MINIMAX_INCLUDE_GROUP_ID && !MINIMAX_GROUP_ID) {
-    throw new Error('MiniMax Group ID ???');
+  const configError = getMiniMaxTTSConfigError();
+  if (configError) {
+    throw new Error(configError);
   }
 
   console.log(`[TTS] MiniMax 生成语音 (音色: ${currentVoiceId}): "${text.substring(0, 50)}..."`);
