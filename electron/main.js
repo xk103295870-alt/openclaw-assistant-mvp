@@ -310,6 +310,37 @@ function extractAssistantTextAndError(historyMessages) {
   return { text, error };
 }
 
+function shouldIncludeAssistantTextChunk(payload) {
+  if (!payload || typeof payload !== 'object') return true;
+
+  const tags = [
+    payload.role,
+    payload.authorRole,
+    payload.senderRole,
+    payload.sourceRole,
+    payload.kind,
+    payload.type,
+    payload.actor,
+    payload.origin,
+    payload.message?.role,
+    payload.message?.authorRole,
+    payload.message?.senderRole,
+    payload.message?.kind
+  ]
+    .map((value) => normalizeText(String(value || '').toLowerCase()))
+    .filter(Boolean);
+
+  if (tags.length === 0) return true;
+
+  if (tags.some((tag) => /(assistant|agent|ai|model|bot|reply|response|output|completion|final)/.test(tag))) {
+    return true;
+  }
+  if (tags.some((tag) => /(user|operator|human|tool|system|input|request|event|command)/.test(tag))) {
+    return false;
+  }
+  return true;
+}
+
 function formatUpstreamFailureHint(rawError) {
   const error = normalizeText(rawError).replace(/\s+/g, ' ');
   if (!error) {
@@ -669,9 +700,14 @@ async function chatWithClawdbot(message, options = {}) {
 
             // 累积流式文本
             if (payload.text) {
-              accumulatedText += payload.text;
-              // 将新文本喂给分割器
-              splitter.addText(payload.text);
+              const chunk = String(payload.text);
+              if (shouldIncludeAssistantTextChunk(payload)) {
+                accumulatedText += chunk;
+                // 将新文本喂给分割器
+                splitter.addText(chunk);
+              } else {
+                console.log('[Clawdbot] 跳过非 assistant chat 文本片段');
+              }
             }
 
             // 检查完成状态
@@ -722,19 +758,9 @@ async function chatWithClawdbot(message, options = {}) {
           // 3. 监听所有其他事件（Clawdbot 可能通过不同事件名返回结果）
           if (msg.type === 'event' && msg.event !== 'chat' && msg.event !== 'connect.challenge') {
             const payload = msg.payload || {};
-            // 尝试从任意事件中提取文本
+            // 其他事件只记录日志，不再拼接到 assistant 回复，避免把用户文本混入 AI 回答
             if (payload.text && typeof payload.text === 'string') {
-              console.log(`[Clawdbot] 从事件 "${msg.event}" 收到文本: ${payload.text.substring(0, 100)}`);
-              accumulatedText += payload.text;
-              splitter.addText(payload.text);
-            }
-            if (payload.message && typeof payload.message === 'string') {
-              console.log(`[Clawdbot] 从事件 "${msg.event}" 收到 message: ${payload.message.substring(0, 100)}`);
-              if (!accumulatedText) accumulatedText = payload.message;
-            }
-            if (payload.result && typeof payload.result === 'string') {
-              console.log(`[Clawdbot] 从事件 "${msg.event}" 收到 result: ${payload.result.substring(0, 100)}`);
-              if (!accumulatedText) accumulatedText = payload.result;
+              console.log(`[Clawdbot] 忽略非 chat 事件文本(${msg.event}): ${payload.text.substring(0, 100)}`);
             }
           }
         } catch (e) {

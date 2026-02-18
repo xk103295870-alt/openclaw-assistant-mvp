@@ -1060,6 +1060,20 @@ function initChatHistory() {
   }
 }
 
+function normalizeChatRole(rawRole, rawName) {
+  const role = String(rawRole || '').trim().toLowerCase();
+  if (role === 'user' || role === 'you' || role === 'human' || role === 'operator' || role === 'me') {
+    return 'user';
+  }
+  if (role === 'assistant' || role === 'ai' || role === 'bot' || role === 'agent' || role === 'kelly' || role === 'claw k') {
+    return 'assistant';
+  }
+
+  const name = String(rawName || '').trim().toLowerCase();
+  if (name === 'you' || name === 'me') return 'user';
+  return 'assistant';
+}
+
 function loadChatHistory() {
   try {
     const raw = localStorage.getItem(CHAT_HISTORY_STORAGE_KEY);
@@ -1075,7 +1089,12 @@ function loadChatHistory() {
     }
 
     chatHistory = parsed
-      .filter((item) => item && typeof item.text === 'string' && typeof item.role === 'string')
+      .filter((item) => item && typeof item.text === 'string')
+      .map((item) => ({
+        ...item,
+        role: normalizeChatRole(item.role, item.name),
+        name: String(item.name || '').trim()
+      }))
       .slice(-CHAT_HISTORY_LIMIT);
   } catch (error) {
     console.warn('[Chat History] Load failed:', error);
@@ -1118,10 +1137,11 @@ function renderChatHistory() {
   }
 
   chatHistoryEl.innerHTML = chatHistory.map((message) => {
-    const roleClass = message.role === 'user' ? 'user' : 'assistant';
-    const roleName = escapeHtml(message.name || (message.role === 'user' ? 'You' : currentCharacter.name));
+    const normalizedRole = normalizeChatRole(message.role, message.name);
+    const roleClass = normalizedRole === 'user' ? 'user' : 'assistant';
+    const roleName = escapeHtml(message.name || (normalizedRole === 'user' ? 'You' : currentCharacter.name));
     const timeText = formatChatTime(message.ts);
-    const contentHtml = renderChatMessageContent(message);
+    const contentHtml = renderChatMessageContent({ ...message, role: normalizedRole });
 
     return `
       <div class="chat-message ${roleClass}">
